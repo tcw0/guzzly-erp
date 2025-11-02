@@ -1,14 +1,16 @@
 "use server"
 
-import { materials } from "@/db/schema"
+import { Material, materials } from "@/db/schema"
 import { db } from "@/db/drizzle"
 
-export const createMaterial = async (params: MaterialParams) => {
+export const createMaterial = async (
+  material: Omit<Material, "id" | "createdAt">
+) => {
   try {
     const newMaterial = await db
       .insert(materials)
       .values({
-        ...params,
+        ...material,
       })
       .returning()
 

@@ -6,13 +6,3 @@ interface ProductParams {
     quantityPerProduct: number
   }>
 }
-
-interface MaterialParams {
-  name: string
-  unit: string
-}
-
-interface MaterialParams {
-  name: string
-  unit: string
-}

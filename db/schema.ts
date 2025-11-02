@@ -77,3 +77,5 @@ export const materialPerProduct = pgTable("material_per_product", {
     scale: 4,
   }).notNull(),
 })
+
+export type Material = typeof materials.$inferSelect
