@@ -33,12 +33,10 @@ export default function RootLayout({
         <SidebarProvider>
           <AppSidebar />
           {/* <main className="flex min-h-screen w-full flex-row"> */}
-          <main>
+          <main className="w-full">
             <SidebarTrigger />
-            <div className="admin-container">
-              {/* <Header session={session} /> */}
-              {children}
-            </div>
+            {/* <Header session={session} /> */}
+            {children}
           </main>
         </SidebarProvider>
         <Toaster />

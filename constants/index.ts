@@ -7,8 +7,8 @@ export const sidebarLinks = [
     icon: Home,
   },
   {
-    title: "Erstellen",
-    url: "/erstellen",
+    title: "Create",
+    url: "/create",
     icon: SquarePlus,
   },
   {
