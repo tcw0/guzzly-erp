@@ -3,16 +3,13 @@
 import Image from "next/image"
 import { sidebarLinks } from "@/constants"
 import Link from "next/link"
-import { cn } from "@/lib/utils"
 import { usePathname } from "next/navigation"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
@@ -22,28 +19,31 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader>
+      <SidebarHeader className="flex items-center justify-center py-4">
         <Image src="/icons/logo.svg" alt="logo" height={60} width={60} />
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu>
-          {sidebarLinks.map((link) => (
-            // const isSelected =
-            //   (link.route !== "/admin" &&
-            //     pathname.includes(link.route) &&
-            //     link.route.length > 1) ||
-            //   pathname === link.route
-
-            <SidebarMenuItem key={link.title}>
-              <SidebarMenuButton asChild>
-                <a href={link.url}>
-                  <link.icon />
-                  <span>{link.title}</span>
-                </a>
-              </SidebarMenuButton>
-              <SidebarMenuAction className="peer-data-[active=true]/menu-button:opacity-100" />
-            </SidebarMenuItem>
-          ))}
+          {sidebarLinks.map((link) => {
+            const isActive = pathname === link.url
+            return (
+              <SidebarMenuItem key={link.title}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={isActive}
+                  className="min-h-12"
+                >
+                  <Link
+                    href={link.url}
+                    className="flex items-center gap-6 flex-1 h-full  ps-4"
+                  >
+                    <link.icon className="scale-150" />
+                    <span className="text-lg font-medium">{link.title}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )
+          })}
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter />
