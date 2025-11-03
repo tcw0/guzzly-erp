@@ -37,15 +37,16 @@ export default function ProductForm() {
     []
   )
 
-  React.useEffect(() => {
-    const loadProducts = async () => {
-      const result = await getProducts()
-      if (result.success && result.data) {
-        setAvailableProducts(result.data)
-      }
+  const loadProducts = React.useCallback(async () => {
+    const result = await getProducts()
+    if (result.success && result.data) {
+      setAvailableProducts(result.data)
     }
-    loadProducts()
   }, [])
+
+  React.useEffect(() => {
+    loadProducts()
+  }, [loadProducts])
 
   const form = useForm<z.infer<typeof productFormSchema>>({
     resolver: zodResolver(productFormSchema),
@@ -68,6 +69,10 @@ export default function ProductForm() {
 
     if (result.success) {
       toast.success("Product created successfully")
+      // Refresh products from the server to keep list authoritative
+      await loadProducts()
+      // Reset form for creating the next product
+      form.reset()
     } else {
       toast.error(result.message)
     }

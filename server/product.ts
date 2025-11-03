@@ -1,6 +1,6 @@
 "use server"
 
-import { products, billOfMaterials } from "@/db/schema"
+import { products, billOfMaterials, inventory } from "@/db/schema"
 import { db } from "@/db/drizzle"
 import { ProductParams } from "@/lib/validation"
 
@@ -45,6 +45,12 @@ export const createProduct = async (params: ProductParams) => {
           }))
         )
       }
+
+      // Create initial inventory entry with zero quantity
+      await tx.insert(inventory).values({
+        productId: product.id,
+        quantityOnHand: "0",
+      })
 
       return product
     })
