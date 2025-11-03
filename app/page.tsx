@@ -15,7 +15,7 @@ export default function Home() {
       <div className="grid h-full w-full grid-cols-1 gap-4 sm:grid-cols-2">
         <Dialog>
           <DialogTrigger asChild>
-            <Button className="h-full w-full text-xl font-bold">
+            <Button className="h-full w-full text-xl font-bold bg-cyan-900 hover:bg-cyan-950">
               Add Output
             </Button>
           </DialogTrigger>
@@ -28,7 +28,7 @@ export default function Home() {
         </Dialog>
         <Dialog>
           <DialogTrigger asChild>
-            <Button className="h-full w-full text-xl font-bold">
+            <Button className="h-full w-full text-xl font-bold bg-red-900 hover:bg-red-950">
               Make Adjustment
             </Button>
           </DialogTrigger>

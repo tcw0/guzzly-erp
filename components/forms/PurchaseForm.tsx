@@ -23,10 +23,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { purchaseFormSchema } from "@/lib/validation"
-import { createPurchase, getRawProducts } from "@/server/purchase"
+import { createPurchase } from "@/server/purchase"
 import { toast } from "sonner"
 import { Loader2, Plus, Trash2 } from "lucide-react"
 import { Product } from "@/db/schema"
+import { getRawProducts } from "@/server/product"
 
 export default function PurchaseForm() {
   const [isLoading, setIsLoading] = React.useState(false)
@@ -88,9 +89,12 @@ export default function PurchaseForm() {
                       render={({ field }) => (
                         <FormItem className="flex-1">
                           <FormLabel className="sr-only">Product</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
+                          <Select
+                            value={field.value}
+                            onValueChange={field.onChange}
+                          >
                             <FormControl>
-                              <SelectTrigger className="book-form_input">
+                              <SelectTrigger>
                                 <SelectValue placeholder="Select product" />
                               </SelectTrigger>
                             </FormControl>
@@ -117,7 +121,6 @@ export default function PurchaseForm() {
                               type="number"
                               step="0.1"
                               placeholder="Quantity"
-                              className="book-form_input"
                               {...field}
                               onChange={(e) =>
                                 field.onChange(parseFloat(e.target.value))
@@ -155,7 +158,7 @@ export default function PurchaseForm() {
           )}
         />
 
-        <Button disabled={isLoading} type="submit" className="book-form_btn">
+        <Button disabled={isLoading} type="submit">
           {isLoading ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (

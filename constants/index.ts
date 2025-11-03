@@ -1,4 +1,11 @@
-import { Brush, Home, Printer, ShoppingBasket, SquarePlus } from "lucide-react"
+import {
+  Brush,
+  Columns3,
+  Home,
+  Printer,
+  ShoppingBasket,
+  SquarePlus,
+} from "lucide-react"
 
 export const sidebarLinks = [
   {
@@ -17,13 +24,8 @@ export const sidebarLinks = [
     icon: ShoppingBasket,
   },
   {
-    title: "Drucken",
-    url: "/drucken",
-    icon: Printer,
-  },
-  {
-    title: "Kleben",
-    url: "/kleben",
-    icon: Brush,
+    title: "Inventory",
+    url: "/inventory",
+    icon: Columns3,
   },
 ]

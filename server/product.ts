@@ -1,9 +1,15 @@
 "use server"
 
-import { products, billOfMaterials, inventory } from "@/db/schema"
+import {
+  products,
+  billOfMaterials,
+  inventory,
+  inventoryMovements,
+} from "@/db/schema"
 import { db } from "@/db/drizzle"
-import { ProductParams } from "@/lib/validation"
+import { OutputParams, ProductParams } from "@/lib/validation"
 import { sql, eq } from "drizzle-orm"
+import { inventoryActionEnum } from "@/constants/inventory-actions"
 
 export const getProducts = async () => {
   try {
@@ -17,6 +23,23 @@ export const getProducts = async () => {
     return {
       success: false,
       message: "Failed to fetch products",
+    }
+  }
+}
+
+export async function getRawProducts() {
+  try {
+    const result = await db
+      .select()
+      .from(products)
+      .where(sql`type = 'RAW'`)
+
+    return { success: true, data: result }
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error ? error.message : "Failed to fetch products",
     }
   }
 }

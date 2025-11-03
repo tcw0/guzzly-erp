@@ -17,7 +17,7 @@ export const INVENTORY_ACTION_ENUM = pgEnum(
 )
 
 export const products = pgTable("products", {
-  id: uuid("id").notNull().primaryKey().defaultRandom().unique(),
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
   name: varchar("name").notNull(),
   type: PRODUCT_TYPE_ENUM("type").notNull(),
   unit: varchar("unit", { length: 32 }).notNull(),
@@ -25,7 +25,7 @@ export const products = pgTable("products", {
 })
 
 export const inventoryMovements = pgTable("inventory_movements", {
-  id: uuid("id").notNull().primaryKey().defaultRandom().unique(),
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
   productId: uuid("product_id")
     .references(() => products.id, {
       onDelete: "set null",
@@ -38,20 +38,28 @@ export const inventoryMovements = pgTable("inventory_movements", {
     .notNull(),
 })
 
-export const inventory = pgTable("inventory", {
-  id: uuid("id").notNull().primaryKey().defaultRandom().unique(),
-  productId: uuid("product_id")
-    .references(() => products.id, {
-      onDelete: "cascade",
-    })
-    .notNull(),
-  quantityOnHand: numeric("quantity_on_hand", { precision: 18, scale: 4 })
-    .notNull()
-    .default("0"),
-})
+export const inventory = pgTable(
+  "inventory",
+  {
+    id: uuid("id").notNull().primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .references(() => products.id, {
+        onDelete: "cascade",
+      })
+      .notNull(),
+    quantityOnHand: numeric("quantity_on_hand", { precision: 18, scale: 4 })
+      .notNull()
+      .default("0"),
+  },
+  (table) => ({
+    inventoryProductIdUnique: unique("inventory_product_id_unique").on(
+      table.productId
+    ),
+  })
+)
 
 export const billOfMaterials = pgTable("bill_of_materials", {
-  id: uuid("id").notNull().primaryKey().defaultRandom().unique(),
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
   productId: uuid("product_id")
     .references(() => products.id, { onDelete: "cascade" })
     .notNull(),

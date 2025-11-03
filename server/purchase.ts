@@ -57,21 +57,4 @@ export async function createPurchase(params: PurchaseParams) {
   }
 }
 
-export async function getRawProducts() {
-  try {
-    const result = await db
-      .select()
-      .from(products)
-      .where(sql`type = 'RAW'`)
-
-    return { success: true, data: result }
-  } catch (error) {
-    return {
-      success: false,
-      message:
-        error instanceof Error ? error.message : "Failed to fetch products",
-    }
-  }
-}
-
 
