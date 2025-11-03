@@ -12,8 +12,8 @@ export const sidebarLinks = [
     icon: SquarePlus,
   },
   {
-    title: "Einkauf",
-    url: "/einkauf",
+    title: "Purchase",
+    url: "/purchase",
     icon: ShoppingBasket,
   },
   {

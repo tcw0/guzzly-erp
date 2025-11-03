@@ -7,15 +7,13 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core"
 import { PRODUCT_TYPES } from "@/constants/product-types"
-
-export const INVENTORY_ACTION_ENUM = pgEnum("inventory_action", [
-  "PURCHASE",
-  "PRODUCTION_OUTPUT",
-  "PRODUCTION_CONSUMPTION",
-  "CORRECTION",
-])
+import { INVENTORY_ACTIONS } from "@/constants/inventory-actions"
 
 export const PRODUCT_TYPE_ENUM = pgEnum("product_type", PRODUCT_TYPES)
+export const INVENTORY_ACTION_ENUM = pgEnum(
+  "inventory_action",
+  INVENTORY_ACTIONS
+)
 
 export const products = pgTable("products", {
   id: uuid("id").notNull().primaryKey().defaultRandom().unique(),
@@ -33,7 +31,7 @@ export const inventoryMovements = pgTable("inventory_movements", {
     })
     .notNull(),
   quantity: numeric("quantity", { precision: 18, scale: 4 }).notNull(),
-  action: INVENTORY_ACTION_ENUM("action").notNull().default("CORRECTION"),
+  action: INVENTORY_ACTION_ENUM("action").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

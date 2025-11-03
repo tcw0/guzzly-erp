@@ -20,7 +20,7 @@ import ProductForm from "@/components/forms/ProductForm"
 import { Boxes } from "lucide-react"
 import { getProducts } from "@/server/product"
 
-async function Create() {
+async function Purchase() {
   const { data: products } = await getProducts()
 
   return (
@@ -72,4 +72,4 @@ async function Create() {
   )
 }
 
-export default Create
+export default Purchase

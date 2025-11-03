@@ -25,5 +25,17 @@ export const productFormSchema = z.object({
   ),
 })
 
+// Output form schema
+export const outputFormSchema = z.object({
+  outputs: z.array(
+    z.object({
+      productId: z.string().uuid(),
+      quantity: z.number().positive(),
+    })
+  ).min(1, { message: "At least one product output is required" }),
+})
+
 export type ProductFormValues = z.infer<typeof productFormSchema>
 export type ProductParams = ProductFormValues
+export type OutputFormValues = z.infer<typeof outputFormSchema>
+export type OutputParams = OutputFormValues
