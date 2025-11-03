@@ -95,23 +95,3 @@ export async function createOutput(params: OutputParams) {
     }
   }
 }
-
-export async function getFinishedProducts() {
-  try {
-    const result = await db
-      .select()
-      .from(products)
-      .where(sql`type != 'RAW'`)
-
-    return {
-      success: true,
-      data: result,
-    }
-  } catch (error) {
-    return {
-      success: false,
-      message:
-        error instanceof Error ? error.message : "Failed to fetch products",
-    }
-  }
-}

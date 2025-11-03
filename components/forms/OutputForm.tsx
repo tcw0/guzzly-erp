@@ -24,19 +24,25 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { outputFormSchema } from "@/lib/validation"
-import { getFinishedProducts, createOutput } from "@/server/output"
+import { createOutput } from "@/server/output"
 import { toast } from "sonner"
 import { Loader2, Plus, Trash2 } from "lucide-react"
+import { getFinishedProducts, getProducts } from "@/server/product"
 
 export default function OutputForm() {
   const [isLoading, setIsLoading] = React.useState(false)
-  const [availableProducts, setAvailableProducts] = React.useState<Product[]>([])
+  const [availableProducts, setAvailableProducts] = React.useState<Product[]>(
+    []
+  )
 
   React.useEffect(() => {
     const loadProducts = async () => {
       const result = await getFinishedProducts()
+      console.log(result)
       if (result.success && result.data) {
         setAvailableProducts(result.data)
+
+        console.log(result.data)
       }
     }
     loadProducts()
@@ -63,7 +69,7 @@ export default function OutputForm() {
       form.reset({
         outputs: [{ productId: "", quantity: 0 }],
       })
-    } else if (!result.success && 'message' in result) {
+    } else if (!result.success && "message" in result) {
       toast.error(result.message)
     } else {
       toast.error("An error occurred while recording production")
@@ -84,10 +90,7 @@ export default function OutputForm() {
                 render={({ field }) => (
                   <FormItem className="flex-1">
                     <FormLabel>Product</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                    >
+                    <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select product" />
@@ -95,10 +98,7 @@ export default function OutputForm() {
                       </FormControl>
                       <SelectContent>
                         {availableProducts.map((product) => (
-                          <SelectItem
-                            key={product.id}
-                            value={product.id}
-                          >
+                          <SelectItem key={product.id} value={product.id}>
                             {product.name} ({product.unit})
                           </SelectItem>
                         ))}
@@ -155,9 +155,7 @@ export default function OutputForm() {
         </Button>
 
         <Button disabled={isLoading} type="submit">
-          {isLoading ? (
-            <Loader2 className="size-4 animate-spin mr-2" />
-          ) : null}
+          {isLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
           Record Production
         </Button>
       </form>

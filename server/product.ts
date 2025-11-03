@@ -3,6 +3,7 @@
 import { products, billOfMaterials, inventory } from "@/db/schema"
 import { db } from "@/db/drizzle"
 import { ProductParams } from "@/lib/validation"
+import { sql, eq } from "drizzle-orm"
 
 export const getProducts = async () => {
   try {
@@ -16,6 +17,26 @@ export const getProducts = async () => {
     return {
       success: false,
       message: "Failed to fetch products",
+    }
+  }
+}
+
+export async function getFinishedProducts() {
+  try {
+    const result = await db
+      .select()
+      .from(products)
+      .where(sql`type != 'RAW'`)
+
+    return {
+      success: true,
+      data: result,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error ? error.message : "Failed to fetch products",
     }
   }
 }

@@ -5,6 +5,7 @@ import {
   varchar,
   numeric,
   timestamp,
+  unique,
 } from "drizzle-orm/pg-core"
 import { PRODUCT_TYPES } from "@/constants/product-types"
 import { INVENTORY_ACTIONS } from "@/constants/inventory-actions"

@@ -19,6 +19,7 @@ import {
 import ProductForm from "@/components/forms/ProductForm"
 import { Boxes } from "lucide-react"
 import { getProducts } from "@/server/product"
+import PurchaseForm from "@/components/forms/PurchaseForm"
 
 async function Purchase() {
   const { data: products } = await getProducts()
@@ -30,13 +31,13 @@ async function Purchase() {
           <DialogTrigger asChild>
             <Button className="h-1/2 w-full text-xl font-bold flex flex-col items-center justify-center gap-4 bg-green-800 hover:bg-green-900">
               <Boxes className="size-16" />
-              Create new Product
+              Add Purchase
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add Product</DialogTitle>
-              <ProductForm />
+              <DialogTitle>Add Purchase</DialogTitle>
+              <PurchaseForm />
             </DialogHeader>
           </DialogContent>
         </Dialog>
