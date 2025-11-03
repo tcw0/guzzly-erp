@@ -22,47 +22,44 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { COLORS } from "@/constants/colors"
 import { productFormSchema } from "@/lib/validation"
 import { createProduct } from "@/server/product"
-import { getMaterials } from "@/server/material"
+import { getProducts } from "@/server/product"
 import { toast } from "sonner"
 import { Loader2, Plus, Trash2 } from "lucide-react"
 import React from "react"
-
-type Material = {
-  id: string
-  name: string
-  unit: string
-}
+import { Product } from "@/db/schema"
+import { productTypeEnum } from "@/constants/product-types"
 
 export default function ProductForm() {
   const [isLoading, setIsLoading] = React.useState(false)
-  const [materials, setMaterials] = React.useState<Material[]>([])
+  const [availableProducts, setAvailableProducts] = React.useState<Product[]>(
+    []
+  )
 
   React.useEffect(() => {
-    const loadMaterials = async () => {
-      const result = await getMaterials()
-      console.log(result)
-      if (result.success) {
-        setMaterials(result.data)
+    const loadProducts = async () => {
+      const result = await getProducts()
+      if (result.success && result.data) {
+        setAvailableProducts(result.data)
       }
     }
-    loadMaterials()
+    loadProducts()
   }, [])
 
   const form = useForm<z.infer<typeof productFormSchema>>({
     resolver: zodResolver(productFormSchema),
     defaultValues: {
       name: "",
-      colors: [],
-      materials: [],
+      type: productTypeEnum.enum.RAW,
+      unit: "",
+      components: [],
     },
   })
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
-    name: "materials",
+    name: "components",
   })
 
   async function onSubmit(values: z.infer<typeof productFormSchema>) {
@@ -103,42 +100,24 @@ export default function ProductForm() {
         />
         <FormField
           control={form.control}
-          name="colors"
+          name="type"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Colors</FormLabel>
-              <div
-                className="flex flex-wrap gap-2 mt-2"
-                role="group"
-                aria-label="Colors"
-              >
-                {COLORS.map((color) => {
-                  const checked = (field.value ?? []).includes(color as any)
-                  return (
-                    <label
-                      key={color}
-                      className="inline-flex items-center space-x-2"
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(val) => {
-                          const isChecked = !!val
-                          if (isChecked && !checked) {
-                            field.onChange([...(field.value ?? []), color])
-                          } else if (!isChecked && checked) {
-                            field.onChange(
-                              (field.value ?? []).filter(
-                                (c: string) => c !== color
-                              )
-                            )
-                          }
-                        }}
-                      />
-                      <span className="text-sm">{color}</span>
-                    </label>
-                  )
-                })}
-              </div>
+              <FormLabel>Type</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select product type" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {productTypeEnum.options.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <FormMessage />
             </FormItem>
           )}
@@ -146,94 +125,113 @@ export default function ProductForm() {
 
         <FormField
           control={form.control}
-          name="materials"
-          render={() => (
+          name="unit"
+          render={({ field }) => (
             <FormItem>
-              <FormLabel>Materials</FormLabel>
-              <div className="space-y-4">
-                {fields.map((field, index) => (
-                  <div key={field.id} className="flex items-end gap-4">
-                    <FormField
-                      control={form.control}
-                      name={`materials.${index}.materialId`}
-                      render={({ field }) => (
-                        <FormItem className="flex-1">
-                          <FormLabel className="sr-only">Material</FormLabel>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                          >
-                            <FormControl>
-                              <SelectTrigger className="book-form_input">
-                                <SelectValue placeholder="Select material" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent className="z-60">
-                              {materials.map((material) => (
-                                <SelectItem
-                                  key={material.id}
-                                  value={material.id}
-                                >
-                                  {material.name} ({material.unit})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name={`materials.${index}.quantityPerProduct`}
-                      render={({ field }) => (
-                        <FormItem className="flex-1">
-                          <FormLabel className="sr-only">Quantity</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              placeholder="Quantity"
-                              className="book-form_input"
-                              {...field}
-                              onChange={(e) =>
-                                field.onChange(parseFloat(e.target.value))
-                              }
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => remove(index)}
-                      className="shrink-0"
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() =>
-                    append({ materialId: "", quantityPerProduct: 0 })
-                  }
-                >
-                  <Plus className="size-4 mr-2" />
-                  Add Material
-                </Button>
-              </div>
+              <FormLabel>Unit</FormLabel>
+              <FormControl>
+                <Input
+                  required
+                  placeholder="Unit (e.g., pcs, kg, m)"
+                  {...field}
+                  className="book-form_input"
+                />
+              </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-
+        {form.watch("type") !== productTypeEnum.enum.RAW && (
+          <FormField
+            control={form.control}
+            name="components"
+            render={() => (
+              <FormItem>
+                <FormLabel>Components</FormLabel>
+                <div className="space-y-4">
+                  {fields.map((field, index) => (
+                    <div key={field.id} className="flex items-end gap-4">
+                      <FormField
+                        control={form.control}
+                        name={`components.${index}.componentId`}
+                        render={({ field }) => (
+                          <FormItem className="flex-1">
+                            <FormLabel className="sr-only">Component</FormLabel>
+                            <Select
+                              value={field.value}
+                              onValueChange={field.onChange}
+                            >
+                              <FormControl>
+                                <SelectTrigger className="book-form_input">
+                                  <SelectValue placeholder="Select component" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent className="z-60">
+                                {availableProducts.map((product) => (
+                                  <SelectItem
+                                    key={product.id}
+                                    value={product.id}
+                                  >
+                                    {product.name} ({product.unit})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`components.${index}.quantityRequired`}
+                        render={({ field }) => (
+                          <FormItem className="flex-1">
+                            <FormLabel className="sr-only">Quantity</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.1"
+                                placeholder="Quantity"
+                                className="book-form_input"
+                                {...field}
+                                onChange={(e) =>
+                                  field.onChange(parseFloat(e.target.value))
+                                }
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => remove(index)}
+                        className="shrink-0"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() =>
+                      append({ componentId: "", quantityRequired: 0 })
+                    }
+                  >
+                    <Plus className="size-4 mr-2" />
+                    Add Component
+                  </Button>
+                </div>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
         <Button disabled={isLoading} type="submit" className="book-form_btn">
           {isLoading ? (
             <Loader2 className="size-4 animate-spin" />

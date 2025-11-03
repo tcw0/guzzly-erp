@@ -1,11 +1,28 @@
 "use server"
 
-import { products, materialPerProduct } from "@/db/schema"
+import { products, billOfMaterials } from "@/db/schema"
 import { db } from "@/db/drizzle"
+import { ProductParams } from "@/lib/validation"
+
+export const getProducts = async () => {
+  try {
+    const result = await db.select().from(products)
+    return {
+      success: true,
+      data: result,
+    }
+  } catch (error) {
+    console.error(error)
+    return {
+      success: false,
+      message: "Failed to fetch products",
+    }
+  }
+}
 
 export const createProduct = async (params: ProductParams) => {
   try {
-    const { materials, ...productData } = params
+    const { components, ...productData } = params
 
     const newProduct = await db.transaction(async (tx) => {
       // Create the product
@@ -13,17 +30,18 @@ export const createProduct = async (params: ProductParams) => {
         .insert(products)
         .values({
           name: productData.name,
-          colors: productData.colors as any,
+          type: productData.type,
+          unit: productData.unit,
         })
         .returning()
 
-      // Create material relationships
-      if (materials && materials.length > 0) {
-        await tx.insert(materialPerProduct).values(
-          materials.map((material) => ({
+      // Create bill of materials relationships
+      if (components && components.length > 0) {
+        await tx.insert(billOfMaterials).values(
+          components.map((component) => ({
             productId: product.id,
-            materialId: material.materialId,
-            quantityPerProduct: material.quantityPerProduct.toString(),
+            componentId: component.componentId,
+            quantityRequired: component.quantityRequired.toString(),
           }))
         )
       }
