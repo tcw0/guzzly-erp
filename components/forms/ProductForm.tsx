@@ -195,7 +195,7 @@ export default function ProductForm() {
                             <FormControl>
                               <Input
                                 type="number"
-                                step="0.1"
+                                step="1"
                                 placeholder="Quantity"
                                 className="book-form_input"
                                 {...field}

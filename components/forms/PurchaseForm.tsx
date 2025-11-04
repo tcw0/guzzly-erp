@@ -119,7 +119,7 @@ export default function PurchaseForm() {
                           <FormControl>
                             <Input
                               type="number"
-                              step="0.1"
+                              step="1"
                               placeholder="Quantity"
                               {...field}
                               onChange={(e) =>
