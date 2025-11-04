@@ -52,6 +52,7 @@ export const outputFormSchema = z.object({
     .array(
       z.object({
         productId: z.string().uuid(),
+        variantId: z.string().uuid().optional(), // Optional for backward compatibility, but required when product has variations
         quantity: z.number().positive(),
       })
     )
@@ -67,6 +68,7 @@ export const purchaseFormSchema = z.object({
     .array(
       z.object({
         productId: z.string().uuid(),
+        variantId: z.string().uuid().optional(), // Optional for backward compatibility, but required when product has variations
         quantity: z.number().positive(),
       })
     )

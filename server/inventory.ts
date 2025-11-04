@@ -1,36 +1,88 @@
 "use server"
 
 import { db } from "@/db/drizzle"
-import { products, inventory } from "@/db/schema"
+import {
+  products,
+  inventory,
+  productVariants,
+  productVariantSelections,
+  productVariations,
+  productVariationOptions,
+} from "@/db/schema"
 import { eq } from "drizzle-orm"
 
 export type InventoryItem = {
   id: string
-  name: string
+  productId: string
+  productName: string
   type: "RAW" | "INTERMEDIATE" | "FINAL"
   unit: string
+  variantId: string
   quantityOnHand: string
+  variantSelections: Array<{
+    variationName: string
+    optionValue: string
+  }>
 }
 
 export async function getInventory() {
   try {
-    const rows = await db
+    // Get all inventory entries with variants
+    const inventoryRows = await db
       .select({
-        id: products.id,
-        name: products.name,
-        type: products.type,
-        unit: products.unit,
-        quantityOnHand: inventory.quantityOnHand,
+        variant: productVariants,
+        product: products,
+        inventory: inventory,
       })
-      .from(products)
-      .leftJoin(inventory, eq(inventory.productId, products.id))
+      .from(inventory)
+      .innerJoin(productVariants, eq(productVariants.id, inventory.variantId))
+      .innerJoin(products, eq(products.id, productVariants.productId))
 
-    const data: InventoryItem[] = rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      type: r.type as InventoryItem["type"],
-      unit: r.unit,
-      quantityOnHand: (r.quantityOnHand ?? "0").toString(),
+    // Get all variant selections for the variants we found
+    const variantIds = inventoryRows.map((r) => r.variant.id)
+    
+    // Group selections by variantId
+    const selectionsMap = new Map<string, Array<{ variationName: string; optionValue: string }>>()
+    
+    // Get all selections - we'll filter by variantId in memory
+    const allSelections = await db
+      .select({
+        variantId: productVariantSelections.variantId,
+        variationName: productVariations.name,
+        optionValue: productVariationOptions.value,
+      })
+      .from(productVariantSelections)
+      .innerJoin(
+        productVariations,
+        eq(productVariations.id, productVariantSelections.variationId)
+      )
+      .innerJoin(
+        productVariationOptions,
+        eq(productVariationOptions.id, productVariantSelections.optionId)
+      )
+
+    // Only include selections for variants that are in inventory
+    for (const sel of allSelections) {
+      if (variantIds.includes(sel.variantId)) {
+        if (!selectionsMap.has(sel.variantId)) {
+          selectionsMap.set(sel.variantId, [])
+        }
+        selectionsMap.get(sel.variantId)!.push({
+          variationName: sel.variationName,
+          optionValue: sel.optionValue,
+        })
+      }
+    }
+
+    const data: InventoryItem[] = inventoryRows.map((r) => ({
+      id: r.variant.id,
+      productId: r.product.id,
+      productName: r.product.name,
+      type: r.product.type as InventoryItem["type"],
+      unit: r.product.unit,
+      variantId: r.variant.id,
+      quantityOnHand: r.inventory.quantityOnHand.toString(),
+      variantSelections: selectionsMap.get(r.variant.id) || [],
     }))
 
     return { success: true as const, data }

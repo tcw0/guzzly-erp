@@ -2,7 +2,12 @@
 
 import { sql, eq, desc } from "drizzle-orm"
 import { db } from "@/db/drizzle"
-import { products, inventory, inventoryMovements } from "@/db/schema"
+import {
+  products,
+  inventory,
+  inventoryMovements,
+  productVariants,
+} from "@/db/schema"
 import { PurchaseParams } from "@/lib/validation"
 import { inventoryActionEnum } from "@/constants/inventory-actions"
 import { productTypeEnum } from "@/constants/product-types"
@@ -25,9 +30,36 @@ export async function createPurchase(params: PurchaseParams) {
           throw new Error("Only RAW products can be purchased")
         }
 
+        // Get variantId - use provided one or find default variant
+        let variantId = item.variantId
+        if (!variantId) {
+          const variants = await tx
+            .select()
+            .from(productVariants)
+            .where(eq(productVariants.productId, item.productId))
+            .limit(1)
+
+          if (!variants[0]) {
+            throw new Error(`No variant found for product ${item.productId}`)
+          }
+          variantId = variants[0].id
+        }
+
+        // Verify variant belongs to product
+        const variant = await tx
+          .select()
+          .from(productVariants)
+          .where(eq(productVariants.id, variantId))
+          .limit(1)
+
+        if (!variant[0] || variant[0].productId !== item.productId) {
+          throw new Error(`Invalid variant for product ${item.productId}`)
+        }
+
         // Create purchase inventory movement
         await tx.insert(inventoryMovements).values({
           productId: item.productId,
+          variantId: variantId,
           quantity: item.quantity.toString(),
           action: inventoryActionEnum.enum.PURCHASE,
         })
@@ -36,11 +68,11 @@ export async function createPurchase(params: PurchaseParams) {
         await tx
           .insert(inventory)
           .values({
-            productId: item.productId,
+            variantId: variantId,
             quantityOnHand: item.quantity.toString(),
           })
           .onConflictDoUpdate({
-            target: [inventory.productId],
+            target: [inventory.variantId],
             set: {
               quantityOnHand: sql`${inventory.quantityOnHand} + ${item.quantity}`,
             },

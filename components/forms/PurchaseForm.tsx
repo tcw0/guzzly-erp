@@ -27,11 +27,31 @@ import { createPurchase } from "@/server/purchase"
 import { toast } from "sonner"
 import { Loader2, Plus, Trash2 } from "lucide-react"
 import { Product } from "@/db/schema"
-import { getRawProducts } from "@/server/product"
+import { getRawProducts, getProductWithVariations, getProductVariants } from "@/server/product"
+
+type ProductVariations = {
+  productId: string
+  variations: Array<{
+    variation: { id: string; name: string }
+    options: Array<{ id: string; value: string }>
+  }>
+  variants: Array<{
+    variant: { id: string }
+    selections: Array<{
+      variationId: string
+      optionId: string
+      variationName: string
+      optionValue: string
+    }>
+  }>
+}
 
 export default function PurchaseForm() {
   const [isLoading, setIsLoading] = React.useState(false)
   const [rawProducts, setRawProducts] = React.useState<Product[]>([])
+  const [productVariationsMap, setProductVariationsMap] = React.useState<
+    Map<string, ProductVariations>
+  >(new Map())
 
   const loadProducts = React.useCallback(async () => {
     const result = await getRawProducts()
@@ -56,6 +76,60 @@ export default function PurchaseForm() {
     name: "purchases",
   })
 
+  // Load product variations when product is selected
+  const handleProductChange = React.useCallback(
+    async (productId: string, index: number) => {
+      if (!productId) {
+        form.setValue(`purchases.${index}.variantId`, undefined)
+        return
+      }
+
+      const productData = await getProductWithVariations(productId)
+      const variantsData = await getProductVariants(productId)
+
+      if (productData.success && productData.data && variantsData.success && variantsData.data) {
+        setProductVariationsMap((prev) => {
+          const newMap = new Map(prev)
+          newMap.set(productId, {
+            productId,
+            variations: productData.data.variations,
+            variants: variantsData.data,
+          })
+          return newMap
+        })
+
+        // If no variations, auto-select default variant
+        if (productData.data.variations.length === 0 && variantsData.data.length > 0) {
+          form.setValue(`purchases.${index}.variantId`, variantsData.data[0].variant.id)
+        } else {
+          form.setValue(`purchases.${index}.variantId`, undefined)
+        }
+      }
+    },
+    [form]
+  )
+
+  // Find variantId based on selected optionIds
+  const findVariantId = React.useCallback(
+    (productId: string, selectedOptionIds: Record<string, string>): string | undefined => {
+      const productData = productVariationsMap.get(productId)
+      if (!productData) return undefined
+
+      // Find variant that matches all selected options
+      return productData.variants.find((v) => {
+        const variantSelections = new Map(
+          v.selections.map((s) => [s.variationId, s.optionId])
+        )
+        
+        // Check if all selected options match this variant
+        return Object.entries(selectedOptionIds).every(
+          ([variationId, optionId]) => variantSelections.get(variationId) === optionId
+        )
+      })?.variant.id
+    },
+    [productVariationsMap]
+  )
+
   async function onSubmit(values: z.infer<typeof purchaseFormSchema>) {
     setIsLoading(true)
     const result = await createPurchase(values)
@@ -64,6 +138,7 @@ export default function PurchaseForm() {
       toast.success("Purchase recorded successfully")
       await loadProducts()
       form.reset({ purchases: [{ productId: "", quantity: 0 }] })
+      setProductVariationsMap(new Map())
     } else {
       toast.error("message" in result ? result.message : "An error occurred")
     }
@@ -81,67 +156,177 @@ export default function PurchaseForm() {
             <FormItem>
               <FormLabel>Purchased Raw Products</FormLabel>
               <div className="space-y-4">
-                {fields.map((field, index) => (
-                  <div key={field.id} className="flex items-end gap-4">
-                    <FormField
-                      control={form.control}
-                      name={`purchases.${index}.productId`}
-                      render={({ field }) => (
-                        <FormItem className="flex-1">
-                          <FormLabel className="sr-only">Product</FormLabel>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                          >
+                {fields.map((field, index) => {
+                  const productId = form.watch(`purchases.${index}.productId`)
+                  const productData = productId ? productVariationsMap.get(productId) : null
+                  const hasVariations = productData && productData.variations.length > 0
+
+                  return (
+                    <div key={field.id} className="space-y-3 rounded-md border p-4">
+                      <div className="flex items-end gap-4">
+                        <FormField
+                          control={form.control}
+                          name={`purchases.${index}.productId`}
+                          render={({ field }) => (
+                            <FormItem className="flex-1">
+                              <FormLabel className="sr-only">Product</FormLabel>
+                              <Select
+                                value={field.value}
+                                onValueChange={(value) => {
+                                  field.onChange(value)
+                                  handleProductChange(value, index)
+                                }}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select product" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="z-60">
+                                  {rawProducts.map((p) => (
+                                    <SelectItem key={p.id} value={p.id}>
+                                      {p.name} ({p.unit})
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`purchases.${index}.quantity`}
+                          render={({ field }) => (
+                            <FormItem className="flex-1">
+                              <FormLabel className="sr-only">Quantity</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="1"
+                                  placeholder="Quantity"
+                                  {...field}
+                                  onChange={(e) =>
+                                    field.onChange(parseFloat(e.target.value))
+                                  }
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            remove(index)
+                            if (productId) {
+                              const newMap = new Map(productVariationsMap)
+                              newMap.delete(productId)
+                              setProductVariationsMap(newMap)
+                            }
+                          }}
+                          className="shrink-0"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+
+                      {/* Variation selectors */}
+                      {hasVariations && productData && (
+                        <div className="space-y-2">
+                          {productData.variations.map((variationData) => {
+                            const variationId = variationData.variation.id
+                            const selectedOptionId = form.watch(
+                              `purchases.${index}.variation_${variationId}` as any
+                            )
+
+                            return (
+                              <FormField
+                                key={variationId}
+                                control={form.control}
+                                name={
+                                  `purchases.${index}.variation_${variationId}` as any
+                                }
+                                render={({ field }) => (
+                                  <FormItem className="flex-1">
+                                    <FormLabel className="text-sm">
+                                      {variationData.variation.name}
+                                    </FormLabel>
+                                    <Select
+                                      value={field.value || ""}
+                                      onValueChange={(value) => {
+                                        field.onChange(value)
+                                        // Update all selected options and find matching variant
+                                        const allSelections: Record<string, string> = {}
+                                        productData.variations.forEach((v) => {
+                                          const val = form.getValues(
+                                            `purchases.${index}.variation_${v.variation.id}` as any
+                                          )
+                                          if (val) {
+                                            allSelections[v.variation.id] = val
+                                          }
+                                        })
+                                        allSelections[variationId] = value
+
+                                        // Check if we have all selections
+                                        if (
+                                          Object.keys(allSelections).length ===
+                                          productData.variations.length
+                                        ) {
+                                          const variantId = findVariantId(
+                                            productId,
+                                            allSelections
+                                          )
+                                          if (variantId) {
+                                            form.setValue(
+                                              `purchases.${index}.variantId`,
+                                              variantId
+                                            )
+                                          }
+                                        }
+                                      }}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger>
+                                          <SelectValue
+                                            placeholder={`Select ${variationData.variation.name}`}
+                                          />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        {variationData.options.map((option) => (
+                                          <SelectItem key={option.id} value={option.id}>
+                                            {option.value}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            )
+                          })}
+                        </div>
+                      )}
+
+                      {/* Hidden variantId field */}
+                      <FormField
+                        control={form.control}
+                        name={`purchases.${index}.variantId`}
+                        render={({ field }) => (
+                          <FormItem className="hidden">
                             <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select product" />
-                              </SelectTrigger>
+                              <Input type="hidden" {...field} />
                             </FormControl>
-                            <SelectContent className="z-60">
-                              {rawProducts.map((p) => (
-                                <SelectItem key={p.id} value={p.id}>
-                                  {p.name} ({p.unit})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name={`purchases.${index}.quantity`}
-                      render={({ field }) => (
-                        <FormItem className="flex-1">
-                          <FormLabel className="sr-only">Quantity</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              step="1"
-                              placeholder="Quantity"
-                              {...field}
-                              onChange={(e) =>
-                                field.onChange(parseFloat(e.target.value))
-                              }
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => remove(index)}
-                      className="shrink-0"
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                ))}
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )
+                })}
                 <Button
                   type="button"
                   variant="outline"
