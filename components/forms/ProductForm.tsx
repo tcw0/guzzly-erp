@@ -55,12 +55,22 @@ export default function ProductForm() {
       type: productTypeEnum.enum.RAW,
       unit: "",
       components: [],
+      variations: [],
     },
   })
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
     name: "components",
+  })
+
+  const {
+    fields: variationFields,
+    append: appendVariation,
+    remove: removeVariation,
+  } = useFieldArray({
+    control: form.control,
+    name: "variations",
   })
 
   async function onSubmit(values: z.infer<typeof productFormSchema>) {
@@ -103,6 +113,107 @@ export default function ProductForm() {
             </FormItem>
           )}
         />
+        {/* Variations section */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <FormLabel>Variations</FormLabel>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => appendVariation({ name: "", options: [] })}
+            >
+              <Plus className="size-4 mr-2" /> Add Variation
+            </Button>
+          </div>
+
+          {variationFields.map((variation, vIndex) => {
+            const options = form.watch(`variations.${vIndex}.options`) || []
+            return (
+              <div key={variation.id} className="space-y-3 rounded-md border p-4">
+                <div className="flex items-end gap-4">
+                  <FormField
+                    control={form.control}
+                    name={`variations.${vIndex}.name`}
+                    render={({ field }) => (
+                      <FormItem className="flex-1">
+                        <FormLabel className="sr-only">Variation Name</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Variation name (e.g., Color, Size)"
+                            className="book-form_input"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => removeVariation(vIndex)}
+                    className="shrink-0"
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <FormLabel className="text-sm">Options</FormLabel>
+                  {options.map((_: string, oIndex: number) => (
+                    <div key={oIndex} className="flex items-end gap-4">
+                      <FormField
+                        control={form.control}
+                        name={`variations.${vIndex}.options.${oIndex}`}
+                        render={({ field }) => (
+                          <FormItem className="flex-1">
+                            <FormLabel className="sr-only">Option</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Option (e.g., White, Black, S, M)"
+                                className="book-form_input"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => {
+                          const current = form.getValues(`variations.${vIndex}.options`) || []
+                          const next = current.filter((_: string, i: number) => i !== oIndex)
+                          form.setValue(`variations.${vIndex}.options`, next as any, { shouldValidate: true })
+                        }}
+                        className="shrink-0"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const current = form.getValues(`variations.${vIndex}.options`) || []
+                      const next = [...current, ""]
+                      form.setValue(`variations.${vIndex}.options`, next as any, { shouldValidate: true })
+                    }}
+                    className="mt-1"
+                  >
+                    <Plus className="size-4 mr-2" /> Add Option
+                  </Button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
         <FormField
           control={form.control}
           name="type"

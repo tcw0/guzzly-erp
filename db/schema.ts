@@ -73,6 +73,26 @@ export const billOfMaterials = pgTable("bill_of_materials", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 })
 
+// Variations for products (e.g., Color, Size)
+export const productVariations = pgTable("product_variations", {
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
+  productId: uuid("product_id")
+    .references(() => products.id, { onDelete: "cascade" })
+    .notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+})
+
+// Options under a variation (e.g., for Color: White, Black)
+export const productVariationOptions = pgTable("product_variation_options", {
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
+  variationId: uuid("variation_id")
+    .references(() => productVariations.id, { onDelete: "cascade" })
+    .notNull(),
+  value: varchar("value", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+})
+
 // export const manufacturingSteps = pgTable("manufacturing_steps", {
 //   id: uuid("id").notNull().primaryKey().defaultRandom().unique(),
 //   productId: uuid("product_id")
@@ -89,4 +109,6 @@ export const billOfMaterials = pgTable("bill_of_materials", {
 
 export type Product = typeof products.$inferSelect
 export type BillOfMaterials = typeof billOfMaterials.$inferSelect
+export type ProductVariation = typeof productVariations.$inferSelect
+export type ProductVariationOption = typeof productVariationOptions.$inferSelect
 // export type ManufacturingStep = typeof manufacturingSteps.$inferSelect

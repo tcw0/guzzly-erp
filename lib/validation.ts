@@ -23,6 +23,24 @@ export const productFormSchema = z.object({
       quantityRequired: z.number().positive(),
     })
   ),
+  variations: z.array(
+    z.object({
+      name: z
+        .string()
+        .trim()
+        .min(1, { message: "Variation name is required" })
+        .max(255, { message: "Variation name must be 255 characters or less" }),
+      options: z
+        .array(
+          z
+            .string()
+            .trim()
+            .min(1, { message: "Option cannot be empty" })
+            .max(255, { message: "Option must be 255 characters or less" })
+        )
+        .min(1, { message: "At least one option is required" }),
+    })
+  ),
 })
 
 export type ProductFormValues = z.infer<typeof productFormSchema>
