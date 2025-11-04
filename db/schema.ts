@@ -31,7 +31,7 @@ export const inventoryMovements = pgTable("inventory_movements", {
       onDelete: "set null",
     })
     .notNull(),
-  quantity: numeric("quantity", { precision: 18, scale: 4 }).notNull(),
+  quantity: numeric("quantity", { precision: 18, scale: 0 }).notNull(),
   action: INVENTORY_ACTION_ENUM("action").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -47,7 +47,7 @@ export const inventory = pgTable(
         onDelete: "cascade",
       })
       .notNull(),
-    quantityOnHand: numeric("quantity_on_hand", { precision: 18, scale: 4 })
+    quantityOnHand: numeric("quantity_on_hand", { precision: 18, scale: 0 })
       .notNull()
       .default("0"),
   },
@@ -68,7 +68,7 @@ export const billOfMaterials = pgTable("bill_of_materials", {
     .notNull(),
   quantityRequired: numeric("quantity_required", {
     precision: 18,
-    scale: 4,
+    scale: 0,
   }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 })
