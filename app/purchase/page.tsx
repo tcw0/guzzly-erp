@@ -16,13 +16,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import ProductForm from "@/components/forms/ProductForm"
 import { Boxes } from "lucide-react"
-import { getProducts } from "@/server/product"
+import { getPurchases } from "@/server/purchase"
 import PurchaseForm from "@/components/forms/PurchaseForm"
 
 async function Purchase() {
-  const { data: products } = await getProducts()
+  const { data: purchases } = await getPurchases()
 
   return (
     <section className="flex h-[calc(100vh-4rem)] w-full flex-col gap-4 p-8">
@@ -46,21 +45,21 @@ async function Purchase() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
+                <TableHead>Product</TableHead>
+                <TableHead>Quantity</TableHead>
                 <TableHead>Unit</TableHead>
-                <TableHead>Created At</TableHead>
+                <TableHead>Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {products?.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell className="font-medium">{product.name}</TableCell>
-                  <TableCell>{product.type}</TableCell>
-                  <TableCell>{product.unit}</TableCell>
+              {purchases?.map((purchase) => (
+                <TableRow key={purchase.id}>
+                  <TableCell className="font-medium">{purchase.productName}</TableCell>
+                  <TableCell>{purchase.quantity}</TableCell>
+                  <TableCell>{purchase.unit}</TableCell>
                   <TableCell>
-                    {product.createdAt
-                      ? new Date(product.createdAt).toLocaleDateString()
+                    {purchase.createdAt
+                      ? new Date(purchase.createdAt as unknown as string).toLocaleDateString()
                       : "-"}
                   </TableCell>
                 </TableRow>

@@ -1,6 +1,6 @@
 "use server"
 
-import { sql, eq } from "drizzle-orm"
+import { sql, eq, desc } from "drizzle-orm"
 import { db } from "@/db/drizzle"
 import { products, inventory, inventoryMovements } from "@/db/schema"
 import { PurchaseParams } from "@/lib/validation"
@@ -57,4 +57,30 @@ export async function createPurchase(params: PurchaseParams) {
   }
 }
 
+
+export async function getPurchases() {
+  try {
+    const result = await db
+      .select({
+        id: inventoryMovements.id,
+        productId: inventoryMovements.productId,
+        productName: products.name,
+        unit: products.unit,
+        quantity: inventoryMovements.quantity,
+        createdAt: inventoryMovements.createdAt,
+      })
+      .from(inventoryMovements)
+      .leftJoin(products, eq(products.id, inventoryMovements.productId))
+      .where(eq(inventoryMovements.action, inventoryActionEnum.enum.PURCHASE))
+      .orderBy(desc(inventoryMovements.createdAt))
+
+    return { success: true, data: result }
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error ? error.message : "Failed to fetch purchases",
+    }
+  }
+}
 
