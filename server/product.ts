@@ -86,6 +86,32 @@ function generateCombinations<T>(arrays: T[][]): T[][] {
   return result
 }
 
+// Helper function to generate SKU from product name
+function generateProductCode(productName: string): string {
+  // Take first 3-4 uppercase letters, remove spaces and special characters
+  const cleaned = productName
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .substring(0, 4)
+  
+  // If too short, pad with product name characters
+  if (cleaned.length < 3) {
+    return (productName.toUpperCase().replace(/[^A-Z0-9]/g, "") + "000").substring(0, 4)
+  }
+  
+  return cleaned
+}
+
+// Helper function to generate option code from option value
+function generateOptionCode(optionValue: string): string {
+  // Take first 2-3 uppercase letters, remove spaces and special characters
+  return optionValue
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .substring(0, 3)
+    .padEnd(2, "X") // Ensure at least 2 characters
+}
+
 export const createProduct = async (params: ProductParams) => {
   try {
     const { components, variations = [], ...productData } = params
@@ -154,10 +180,29 @@ export const createProduct = async (params: ProductParams) => {
         // Generate all combinations
         const combinations = generateCombinations(variationOptionArrays)
 
-        // Create variants for each combination
-        const variantsToInsert = combinations.map(() => ({
-          productId: product.id,
-        }))
+        // Generate product code for SKU prefix
+        const productCode = generateProductCode(productData.name)
+
+        // Create variants for each combination with SKU
+        const variantsToInsert = combinations.map((combo) => {
+          // Build SKU: PRODUCT-OPTION1-OPTION2-...
+          // Ensure option codes are in the same order as variations
+          const optionCodes = insertedVariations.map((variation) => {
+            const comboItem = combo.find((c) => c.variationId === variation.id)
+            if (!comboItem) return ""
+            const option = insertedOptions.find((opt) => opt.id === comboItem.optionId)
+            return option ? generateOptionCode(option.value) : ""
+          }).filter(Boolean)
+          
+          const sku = optionCodes.length > 0
+            ? `${productCode}-${optionCodes.join("-")}`
+            : `${productCode}-DEFAULT`
+          
+          return {
+            productId: product.id,
+            sku: sku,
+          }
+        })
 
         const insertedVariants = await tx
           .insert(productVariants)
@@ -185,11 +230,13 @@ export const createProduct = async (params: ProductParams) => {
 
         await tx.insert(inventory).values(inventoryEntries)
       } else {
-        // No variations - create one default variant
+        // No variations - create one default variant with SKU
+        const productCode = generateProductCode(productData.name)
         const [defaultVariant] = await tx
           .insert(productVariants)
           .values({
             productId: product.id,
+            sku: `${productCode}-DEFAULT`,
           })
           .returning()
 
