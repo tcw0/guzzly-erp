@@ -19,6 +19,7 @@ import {
 import ProductForm from "@/components/forms/ProductForm"
 import { Boxes } from "lucide-react"
 import { getProducts } from "@/server/product"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 async function Create() {
   const { data: products } = await getProducts()
@@ -33,11 +34,13 @@ async function Create() {
               Create new Product
             </Button>
           </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
+          <DialogContent className="p-0">
+            <DialogHeader className="px-6 pt-6">
               <DialogTitle>Add Product</DialogTitle>
-              <ProductForm />
             </DialogHeader>
+            <ScrollArea className="px-6 pb-6 max-h-[80vh]">
+              <ProductForm />
+            </ScrollArea>
           </DialogContent>
         </Dialog>
 

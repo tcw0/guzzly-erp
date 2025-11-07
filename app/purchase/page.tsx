@@ -19,6 +19,7 @@ import {
 import { Boxes } from "lucide-react"
 import { getPurchases } from "@/server/purchase"
 import PurchaseForm from "@/components/forms/PurchaseForm"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 async function Purchase() {
   const { data: purchases } = await getPurchases()
@@ -33,11 +34,13 @@ async function Purchase() {
               Add Purchase
             </Button>
           </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
+          <DialogContent className="p-0">
+            <DialogHeader className="px-6 pt-6">
               <DialogTitle>Add Purchase</DialogTitle>
-              <PurchaseForm />
             </DialogHeader>
+            <ScrollArea className="px-6 pb-6 max-h-[80vh]">
+              <PurchaseForm />
+            </ScrollArea>
           </DialogContent>
         </Dialog>
 
@@ -54,12 +57,16 @@ async function Purchase() {
             <TableBody>
               {purchases?.map((purchase) => (
                 <TableRow key={purchase.id}>
-                  <TableCell className="font-medium">{purchase.productName}</TableCell>
+                  <TableCell className="font-medium">
+                    {purchase.productName}
+                  </TableCell>
                   <TableCell>{purchase.quantity}</TableCell>
                   <TableCell>{purchase.unit}</TableCell>
                   <TableCell>
                     {purchase.createdAt
-                      ? new Date(purchase.createdAt as unknown as string).toLocaleDateString()
+                      ? new Date(
+                          purchase.createdAt as unknown as string
+                        ).toLocaleDateString()
                       : "-"}
                   </TableCell>
                 </TableRow>

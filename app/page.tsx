@@ -8,6 +8,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 export default function Home() {
   return (
@@ -19,11 +20,13 @@ export default function Home() {
               Add Output
             </Button>
           </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
+          <DialogContent className="p-0">
+            <DialogHeader className="px-6 pt-6">
               <DialogTitle>Add Output</DialogTitle>
-              <OutputForm />
             </DialogHeader>
+            <ScrollArea className="px-6 pb-6 max-h-[80vh]">
+              <OutputForm />
+            </ScrollArea>
           </DialogContent>
         </Dialog>
         <Dialog>

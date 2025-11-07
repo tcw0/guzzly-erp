@@ -93,12 +93,14 @@ function generateProductCode(productName: string): string {
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "")
     .substring(0, 4)
-  
+
   // If too short, pad with product name characters
   if (cleaned.length < 3) {
-    return (productName.toUpperCase().replace(/[^A-Z0-9]/g, "") + "000").substring(0, 4)
+    return (
+      productName.toUpperCase().replace(/[^A-Z0-9]/g, "") + "000"
+    ).substring(0, 4)
   }
-  
+
   return cleaned
 }
 
@@ -109,7 +111,6 @@ function generateOptionCode(optionValue: string): string {
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "")
     .substring(0, 3)
-    .padEnd(2, "X") // Ensure at least 2 characters
 }
 
 export const createProduct = async (params: ProductParams) => {
@@ -155,13 +156,15 @@ export const createProduct = async (params: ProductParams) => {
           .returning()
 
         // Insert options for each variation
-        const optionsToInsert = insertedVariations.flatMap((insertedVar, idx) => {
-          const source = variations[idx]
-          return (source.options || []).map((opt) => ({
-            variationId: insertedVar.id,
-            value: opt,
-          }))
-        })
+        const optionsToInsert = insertedVariations.flatMap(
+          (insertedVar, idx) => {
+            const source = variations[idx]
+            return (source.options || []).map((opt) => ({
+              variationId: insertedVar.id,
+              value: opt,
+            }))
+          }
+        )
 
         if (optionsToInsert.length > 0) {
           insertedOptions = await tx
@@ -187,17 +190,24 @@ export const createProduct = async (params: ProductParams) => {
         const variantsToInsert = combinations.map((combo) => {
           // Build SKU: PRODUCT-OPTION1-OPTION2-...
           // Ensure option codes are in the same order as variations
-          const optionCodes = insertedVariations.map((variation) => {
-            const comboItem = combo.find((c) => c.variationId === variation.id)
-            if (!comboItem) return ""
-            const option = insertedOptions.find((opt) => opt.id === comboItem.optionId)
-            return option ? generateOptionCode(option.value) : ""
-          }).filter(Boolean)
-          
-          const sku = optionCodes.length > 0
-            ? `${productCode}-${optionCodes.join("-")}`
-            : `${productCode}-DEFAULT`
-          
+          const optionCodes = insertedVariations
+            .map((variation) => {
+              const comboItem = combo.find(
+                (c) => c.variationId === variation.id
+              )
+              if (!comboItem) return ""
+              const option = insertedOptions.find(
+                (opt) => opt.id === comboItem.optionId
+              )
+              return option ? generateOptionCode(option.value) : ""
+            })
+            .filter(Boolean)
+
+          const sku =
+            optionCodes.length > 0
+              ? `${productCode}-${optionCodes.join("-")}`
+              : `${productCode}-DEFAULT`
+
           return {
             productId: product.id,
             sku: sku,
@@ -210,13 +220,15 @@ export const createProduct = async (params: ProductParams) => {
           .returning()
 
         // Create variant selections for each combination
-        const selectionsToInsert = insertedVariants.flatMap((variant, variantIdx) => {
-          return combinations[variantIdx].map((combo) => ({
-            variantId: variant.id,
-            variationId: combo.variationId,
-            optionId: combo.optionId,
-          }))
-        })
+        const selectionsToInsert = insertedVariants.flatMap(
+          (variant, variantIdx) => {
+            return combinations[variantIdx].map((combo) => ({
+              variantId: variant.id,
+              variationId: combo.variationId,
+              optionId: combo.optionId,
+            }))
+          }
+        )
 
         if (selectionsToInsert.length > 0) {
           await tx.insert(productVariantSelections).values(selectionsToInsert)
@@ -331,7 +343,9 @@ export async function getProductVariants(productId: string) {
     return {
       success: false,
       message:
-        error instanceof Error ? error.message : "Failed to fetch product variants",
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch product variants",
     }
   }
 }
