@@ -1,7 +1,7 @@
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm, useFieldArray } from "react-hook-form"
+import { useForm, useFieldArray, type Resolver } from "react-hook-form"
 import { z } from "zod"
 
 import { Button } from "@/components/ui/button"
@@ -62,7 +62,9 @@ export default function ProductForm() {
   }, [loadProducts])
 
   const form = useForm<z.infer<typeof productFormSchema>>({
-    resolver: zodResolver(productFormSchema),
+    resolver: zodResolver(productFormSchema) as unknown as Resolver<
+      z.infer<typeof productFormSchema>
+    >,
     defaultValues: {
       name: "",
       type: productTypeEnum.enum.RAW,
