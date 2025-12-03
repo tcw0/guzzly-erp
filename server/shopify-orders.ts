@@ -368,3 +368,103 @@ export async function getOrderStatus(shopifyOrderId: string) {
     }
   }
 }
+
+/**
+ * Get all Shopify orders with their line items
+ * Optimized for production/packing dashboard
+ */
+export async function getShopifyOrders() {
+  try {
+    const orders = await db
+      .select({
+        id: shopifyOrders.id,
+        shopifyOrderId: shopifyOrders.shopifyOrderId,
+        shopifyOrderNumber: shopifyOrders.shopifyOrderNumber,
+        status: shopifyOrders.status,
+        customerEmail: shopifyOrders.customerEmail,
+        totalAmount: shopifyOrders.totalAmount,
+        fulfilledAt: shopifyOrders.fulfilledAt,
+        processedAt: shopifyOrders.processedAt,
+        errorMessage: shopifyOrders.errorMessage,
+        createdAt: shopifyOrders.createdAt,
+      })
+      .from(shopifyOrders)
+      .orderBy(shopifyOrders.createdAt)
+
+    // Get line items for all orders
+    const orderIds = orders.map((o) => o.id)
+    const allLineItems = orderIds.length > 0
+      ? await db
+          .select({
+            orderId: shopifyOrderItems.orderId,
+            id: shopifyOrderItems.id,
+            shopifyLineItemId: shopifyOrderItems.shopifyLineItemId,
+            shopifyProductId: shopifyOrderItems.shopifyProductId,
+            shopifyVariantId: shopifyOrderItems.shopifyVariantId,
+            shopifySku: shopifyOrderItems.sku,
+            quantity: shopifyOrderItems.quantity,
+            price: shopifyOrderItems.price,
+            mappedToVariantId: shopifyOrderItems.productVariantId,
+            mappingStatus: shopifyOrderItems.mappingStatus,
+            // Get ERP product info
+            erpProductName: products.name,
+            erpSku: productVariants.sku,
+          })
+          .from(shopifyOrderItems)
+          .leftJoin(
+            productVariants,
+            eq(shopifyOrderItems.productVariantId, productVariants.id)
+          )
+          .leftJoin(products, eq(productVariants.productId, products.id))
+          .where(
+            eq(
+              shopifyOrderItems.orderId,
+              orderIds.length === 1 ? orderIds[0] : shopifyOrderItems.orderId
+            )
+          )
+      : []
+
+    // Group line items by order
+    const ordersWithItems = orders.map((order) => ({
+      ...order,
+      lineItems: allLineItems.filter((item) => item.orderId === order.id),
+    }))
+
+    return {
+      success: true,
+      orders: ordersWithItems,
+    }
+  } catch (error) {
+    console.error("Error fetching orders:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+      orders: [],
+    }
+  }
+}
+
+/**
+ * Get recent webhook logs for monitoring
+ */
+export async function getWebhookLogs(limit: number = 50) {
+  try {
+    const logs = await db
+      .select()
+      .from(shopifyWebhookLogs)
+      .orderBy(shopifyWebhookLogs.createdAt)
+      .limit(limit)
+
+    return {
+      success: true,
+      logs,
+    }
+  } catch (error) {
+    console.error("Error fetching webhook logs:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+      logs: [],
+    }
+  }
+}

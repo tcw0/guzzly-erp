@@ -5,6 +5,11 @@ import {
   Printer,
   ShoppingBasket,
   SquarePlus,
+  Store,
+  LinkIcon,
+  Package,
+  Webhook,
+  Settings,
 } from "lucide-react"
 
 export const sidebarLinks = [
@@ -27,5 +32,28 @@ export const sidebarLinks = [
     title: "Inventory",
     url: "/inventory",
     icon: Columns3,
+  },
+]
+
+export const shopifySidebarLinks = [
+  {
+    title: "SKU Mapping",
+    url: "/shopify/mapping",
+    icon: LinkIcon,
+  },
+  {
+    title: "Orders",
+    url: "/shopify/orders",
+    icon: Package,
+  },
+  {
+    title: "Webhooks",
+    url: "/shopify/webhooks",
+    icon: Webhook,
+  },
+  {
+    title: "Settings",
+    url: "/shopify/settings",
+    icon: Settings,
   },
 ]
