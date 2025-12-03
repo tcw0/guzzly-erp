@@ -22,6 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Label } from "@/components/ui/label"
 import { productFormSchema } from "@/lib/validation"
 import { createProduct } from "@/server/product"
 import { getProducts, getProductWithVariations } from "@/server/product"
@@ -116,6 +118,7 @@ export default function ProductForm() {
             )
             return {
               componentVariationName: compVar.variation.name,
+              strategy: matchingProductVar ? "mapped" as const : "auto" as const,
               productVariationName: matchingProductVar?.name,
               defaultOptionValue: undefined,
             }
@@ -402,59 +405,98 @@ export default function ProductForm() {
                               Variant Mapping
                             </FormLabel>
                             <p className="text-xs text-muted-foreground">
-                              Map component variations to product variations or set default values
+                              Configure how component variations map to product variants
                             </p>
                             {componentVariations.map((compVar, varIndex) => {
                               const mappingRules = form.watch(`components.${index}.variantMappingRules`) || []
                               const rule = mappingRules.find(
                                 (r) => r.componentVariationName === compVar.variation.name
-                              ) || { componentVariationName: compVar.variation.name }
+                              ) || { 
+                                componentVariationName: compVar.variation.name,
+                                strategy: "auto" as const,
+                              }
+                              
+                              const updateRule = (updates: Partial<typeof rule>) => {
+                                const currentRules = form.getValues(`components.${index}.variantMappingRules`) || []
+                                const newRules = [...currentRules]
+                                const existingIndex = newRules.findIndex(
+                                  (r) => r.componentVariationName === compVar.variation.name
+                                )
+                                
+                                const updatedRule = {
+                                  componentVariationName: compVar.variation.name,
+                                  strategy: rule.strategy,
+                                  productVariationName: rule.productVariationName,
+                                  defaultOptionValue: rule.defaultOptionValue,
+                                  ...updates,
+                                }
+                                
+                                if (existingIndex >= 0) {
+                                  newRules[existingIndex] = updatedRule
+                                } else {
+                                  newRules.push(updatedRule)
+                                }
+                                
+                                form.setValue(`components.${index}.variantMappingRules`, newRules)
+                              }
                               
                               return (
-                                <div key={compVar.variation.id} className="space-y-2 rounded-md border p-3">
+                                <div key={compVar.variation.id} className="space-y-3 rounded-md border p-3 bg-muted/30">
                                   <div className="flex items-center gap-2">
                                     <FormLabel className="text-sm font-medium">
                                       {compVar.variation.name}
                                     </FormLabel>
                                     <span className="text-xs text-muted-foreground">
-                                      (Component)
+                                      (Component Variation)
                                     </span>
                                   </div>
                                   
-                                  <div className="grid grid-cols-2 gap-2">
+                                  <RadioGroup
+                                    value={rule.strategy || "auto"}
+                                    onValueChange={(value: "auto" | "mapped" | "default") => {
+                                      updateRule({
+                                        strategy: value,
+                                        productVariationName: value === "mapped" ? rule.productVariationName : undefined,
+                                        defaultOptionValue: value === "default" ? rule.defaultOptionValue : undefined,
+                                      })
+                                    }}
+                                    className="gap-2"
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="auto" id={`${compVar.variation.id}-auto`} />
+                                      <Label htmlFor={`${compVar.variation.id}-auto`} className="text-sm font-normal cursor-pointer">
+                                        Auto-match by name
+                                      </Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="mapped" id={`${compVar.variation.id}-mapped`} />
+                                      <Label htmlFor={`${compVar.variation.id}-mapped`} className="text-sm font-normal cursor-pointer">
+                                        Map to product variation
+                                      </Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="default" id={`${compVar.variation.id}-default`} />
+                                      <Label htmlFor={`${compVar.variation.id}-default`} className="text-sm font-normal cursor-pointer">
+                                        Use fixed default value
+                                      </Label>
+                                    </div>
+                                  </RadioGroup>
+                                  
+                                  {rule.strategy === "mapped" && (
                                     <FormItem>
-                                      <FormLabel className="text-xs">Map to Product Variation</FormLabel>
+                                      <FormLabel className="text-xs">Select Product Variation</FormLabel>
                                       <Select
                                         value={rule.productVariationName || ""}
                                         onValueChange={(value) => {
-                                          const currentRules = form.getValues(`components.${index}.variantMappingRules`) || []
-                                          const newRules = [...currentRules]
-                                          const existingIndex = newRules.findIndex(
-                                            (r) => r.componentVariationName === compVar.variation.name
-                                          )
-                                          
-                                          if (existingIndex >= 0) {
-                                            newRules[existingIndex] = {
-                                              ...newRules[existingIndex],
-                                              productVariationName: value || undefined,
-                                              defaultOptionValue: undefined,
-                                            }
-                                          } else {
-                                            newRules.push({
-                                              componentVariationName: compVar.variation.name,
-                                              productVariationName: value || undefined,
-                                              defaultOptionValue: undefined,
-                                            })
-                                          }
-                                          
-                                          form.setValue(`components.${index}.variantMappingRules`, newRules)
+                                          updateRule({
+                                            productVariationName: value || undefined,
+                                          })
                                         }}
                                       >
                                         <SelectTrigger className="h-8 text-xs">
-                                          <SelectValue placeholder="Auto-match" />
+                                          <SelectValue placeholder="Choose variation..." />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="Auto-match by name">Auto-match by name</SelectItem>
                                           {productVariations.map((prodVar) => (
                                             <SelectItem key={prodVar.name} value={prodVar.name}>
                                               {prodVar.name}
@@ -463,40 +505,23 @@ export default function ProductForm() {
                                         </SelectContent>
                                       </Select>
                                     </FormItem>
-                                    
+                                  )}
+                                  
+                                  {rule.strategy === "default" && (
                                     <FormItem>
-                                      <FormLabel className="text-xs">Or Set Default Value</FormLabel>
+                                      <FormLabel className="text-xs">Select Default Value</FormLabel>
                                       <Select
                                         value={rule.defaultOptionValue || ""}
                                         onValueChange={(value) => {
-                                          const currentRules = form.getValues(`components.${index}.variantMappingRules`) || []
-                                          const newRules = [...currentRules]
-                                          const existingIndex = newRules.findIndex(
-                                            (r) => r.componentVariationName === compVar.variation.name
-                                          )
-                                          
-                                          if (existingIndex >= 0) {
-                                            newRules[existingIndex] = {
-                                              ...newRules[existingIndex],
-                                              productVariationName: undefined,
-                                              defaultOptionValue: value || undefined,
-                                            }
-                                          } else {
-                                            newRules.push({
-                                              componentVariationName: compVar.variation.name,
-                                              productVariationName: undefined,
-                                              defaultOptionValue: value || undefined,
-                                            })
-                                          }
-                                          
-                                          form.setValue(`components.${index}.variantMappingRules`, newRules)
+                                          updateRule({
+                                            defaultOptionValue: value || undefined,
+                                          })
                                         }}
                                       >
                                         <SelectTrigger className="h-8 text-xs">
-                                          <SelectValue placeholder="No default" />
+                                          <SelectValue placeholder="Choose option..." />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="No default">No default</SelectItem>
                                           {compVar.options.map((opt) => (
                                             <SelectItem key={opt.id} value={opt.value}>
                                               {opt.value}
@@ -505,7 +530,13 @@ export default function ProductForm() {
                                         </SelectContent>
                                       </Select>
                                     </FormItem>
-                                  </div>
+                                  )}
+                                  
+                                  {rule.strategy === "auto" && (
+                                    <p className="text-xs text-muted-foreground italic">
+                                      Will automatically match "{compVar.variation.name}" with product variation of the same name
+                                    </p>
+                                  )}
                                 </div>
                               )
                             })}

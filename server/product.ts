@@ -367,15 +367,21 @@ export const createProduct = async (params: ProductParams) => {
                 let matches = true
 
                 for (const rule of component.variantMappingRules) {
-                  const productSelection = productSelections.find(
-                    (s) => s.variationName === rule.productVariationName
+                  const componentSelection = componentSelections.find(
+                    (s) => s.variationName === rule.componentVariationName
                   )
 
-                  if (rule.productVariationName && productSelection) {
-                    // Match by product variation name
-                    const componentSelection = componentSelections.find(
-                      (s) => s.variationName === rule.componentVariationName
+                  if (rule.strategy === "mapped" && rule.productVariationName) {
+                    // Strategy: Map to specific product variation
+                    const productSelection = productSelections.find(
+                      (s) => s.variationName === rule.productVariationName
                     )
+                    
+                    if (!productSelection) {
+                      matches = false
+                      break
+                    }
+                    
                     if (
                       !componentSelection ||
                       componentSelection.optionValue !== productSelection.optionValue
@@ -383,11 +389,8 @@ export const createProduct = async (params: ProductParams) => {
                       matches = false
                       break
                     }
-                  } else if (rule.defaultOptionValue) {
-                    // Use default option value
-                    const componentSelection = componentSelections.find(
-                      (s) => s.variationName === rule.componentVariationName
-                    )
+                  } else if (rule.strategy === "default" && rule.defaultOptionValue) {
+                    // Strategy: Use fixed default value
                     if (
                       !componentSelection ||
                       componentSelection.optionValue !== rule.defaultOptionValue
@@ -395,6 +398,23 @@ export const createProduct = async (params: ProductParams) => {
                       matches = false
                       break
                     }
+                  } else if (rule.strategy === "auto") {
+                    // Strategy: Auto-match by variation name
+                    const productSelection = productSelections.find(
+                      (s) => s.variationName === rule.componentVariationName
+                    )
+                    
+                    if (productSelection) {
+                      // Found matching variation name in product, match option values
+                      if (
+                        !componentSelection ||
+                        componentSelection.optionValue !== productSelection.optionValue
+                      ) {
+                        matches = false
+                        break
+                      }
+                    }
+                    // If no matching product variation found, auto strategy allows any component option
                   }
                 }
 
@@ -404,7 +424,7 @@ export const createProduct = async (params: ProductParams) => {
                 }
               }
             } else {
-              // Auto-match: if component has variations, try to match by variation name
+              // No mapping rules: default to auto-match by variation name
               if (componentVariantSelectionsMap.size > 0) {
                 for (const componentVariant of componentVariants) {
                   const componentSelections =
