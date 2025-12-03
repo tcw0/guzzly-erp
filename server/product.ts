@@ -87,6 +87,11 @@ function generateCombinations<T>(arrays: T[][]): T[][] {
 }
 
 // Helper function to generate SKU from product name
+// SKU Format: PRODUCTCODE-OPTION1-OPTION2-PRODUCTID
+// Example: BASK-RED-LRG-A3F2E1
+// - PRODUCTCODE: First 3-4 letters of product name (e.g., BASK for "Basket")
+// - OPTION1, OPTION2: Variation options (e.g., RED, LRG)
+// - PRODUCTID: First 6 chars of product UUID for guaranteed uniqueness
 function generateProductCode(productName: string): string {
   // Take first 3-4 uppercase letters, remove spaces and special characters
   const cleaned = productName
@@ -174,10 +179,13 @@ export const createProduct = async (params: ProductParams) => {
 
         // Generate product code for SKU prefix
         const productCode = generateProductCode(productData.name)
+        
+        // Generate short unique ID from product UUID (first 6 chars)
+        const shortProductId = product.id.split('-')[0].substring(0, 6).toUpperCase()
 
         // Create variants for each combination with SKU
         const variantsToInsert = combinations.map((combo) => {
-          // Build SKU: PRODUCT-OPTION1-OPTION2-...
+          // Build SKU: PRODUCT-OPTION1-OPTION2-PRODUCTID
           // Ensure option codes are in the same order as variations
           const optionCodes = insertedVariations
             .map((variation) => {
@@ -194,14 +202,27 @@ export const createProduct = async (params: ProductParams) => {
 
           const sku =
             optionCodes.length > 0
-              ? `${productCode}-${optionCodes.join("-")}`
-              : `${productCode}-DEFAULT`
+              ? `${productCode}-${optionCodes.join("-")}-${shortProductId}`
+              : `${productCode}-DEFAULT-${shortProductId}`
 
           return {
             productId: product.id,
             sku: sku,
           }
         })
+
+        // Check for SKU collisions before inserting (safety check)
+        const skusToCheck = variantsToInsert.map(v => v.sku)
+        const existingVariants = await tx
+          .select({ sku: productVariants.sku })
+          .from(productVariants)
+          .where(sql`${productVariants.sku} = ANY(ARRAY[${sql.join(skusToCheck.map(sku => sql`${sku}`), sql`, `)}])`)
+        
+        if (existingVariants.length > 0) {
+          throw new Error(
+            `SKU collision detected: ${existingVariants.map(v => v.sku).join(', ')}. This should not happen - please contact support.`
+          )
+        }
 
         const insertedVariants = await tx
           .insert(productVariants)
@@ -233,11 +254,15 @@ export const createProduct = async (params: ProductParams) => {
       } else {
         // No variations - create one default variant with SKU
         const productCode = generateProductCode(productData.name)
+        
+        // Generate short unique ID from product UUID (first 6 chars)
+        const shortProductId = product.id.split('-')[0].substring(0, 6).toUpperCase()
+        
         const [defaultVariant] = await tx
           .insert(productVariants)
           .values({
             productId: product.id,
-            sku: `${productCode}-DEFAULT`,
+            sku: `${productCode}-DEFAULT-${shortProductId}`,
           })
           .returning()
 

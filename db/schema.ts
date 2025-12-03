@@ -50,9 +50,11 @@ export const productVariants = pgTable("product_variants", {
   productId: uuid("product_id")
     .references(() => products.id, { onDelete: "cascade" })
     .notNull(),
-  sku: varchar("sku", { length: 255 }), // Optional SKU code
+  sku: varchar("sku", { length: 255 }).notNull(), // Required unique SKU code
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-})
+}, (table) => ({
+  skuUnique: unique("product_variants_sku_unique").on(table.sku),
+}))
 
 // Junction table linking variants to specific variation option values
 export const productVariantSelections = pgTable(
