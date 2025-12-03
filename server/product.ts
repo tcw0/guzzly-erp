@@ -2,7 +2,7 @@
 
 import {
   products,
-  billOfMaterials,
+  variantBillOfMaterials,
   inventory,
   inventoryMovements,
   productVariations,
@@ -128,17 +128,6 @@ export const createProduct = async (params: ProductParams) => {
         })
         .returning()
 
-      // Create bill of materials relationships
-      if (components && components.length > 0) {
-        await tx.insert(billOfMaterials).values(
-          components.map((component) => ({
-            productId: product.id,
-            componentId: component.componentId,
-            quantityRequired: component.quantityRequired.toString(),
-          }))
-        )
-      }
-
       let insertedVariations: (typeof productVariations.$inferSelect)[] = []
       let insertedOptions: (typeof productVariationOptions.$inferSelect)[] = []
 
@@ -257,6 +246,200 @@ export const createProduct = async (params: ProductParams) => {
           variantId: defaultVariant.id,
           quantityOnHand: "0",
         })
+      }
+
+      // Get all product variants for BOM creation
+      const allProductVariants = await tx
+        .select()
+        .from(productVariants)
+        .where(eq(productVariants.productId, product.id))
+
+      // Create variant-aware bill of materials
+      if (components && components.length > 0) {
+        // Get product variant selections
+        const productVariantSelectionsMap = new Map<
+          string,
+          Array<{ variationName: string; optionValue: string }>
+        >()
+
+        if (allProductVariants.length > 0) {
+          const variantIds = allProductVariants.map((v) => v.id)
+          const allSelections = await tx
+            .select({
+              variantId: productVariantSelections.variantId,
+              variationName: productVariations.name,
+              optionValue: productVariationOptions.value,
+            })
+            .from(productVariantSelections)
+            .innerJoin(
+              productVariations,
+              eq(productVariations.id, productVariantSelections.variationId)
+            )
+            .innerJoin(
+              productVariationOptions,
+              eq(productVariationOptions.id, productVariantSelections.optionId)
+            )
+
+          for (const sel of allSelections) {
+            if (variantIds.includes(sel.variantId)) {
+              if (!productVariantSelectionsMap.has(sel.variantId)) {
+                productVariantSelectionsMap.set(sel.variantId, [])
+              }
+              productVariantSelectionsMap.get(sel.variantId)!.push({
+                variationName: sel.variationName,
+                optionValue: sel.optionValue,
+              })
+            }
+          }
+        }
+
+        for (const component of components) {
+          // Get component product and its variants
+          const componentProduct = await tx
+            .select()
+            .from(products)
+            .where(eq(products.id, component.componentId))
+            .limit(1)
+
+          if (!componentProduct[0]) {
+            throw new Error(`Component product ${component.componentId} not found`)
+          }
+
+          const componentVariants = await tx
+            .select()
+            .from(productVariants)
+            .where(eq(productVariants.productId, component.componentId))
+
+          if (componentVariants.length === 0) {
+            throw new Error(
+              `No variants found for component ${component.componentId}`
+            )
+          }
+
+          // Get component variant selections
+          const componentVariantSelectionsMap = new Map<
+            string,
+            Array<{ variationName: string; optionValue: string }>
+          >()
+
+          const componentVariantIds = componentVariants.map((v) => v.id)
+          const componentSelections = await tx
+            .select({
+              variantId: productVariantSelections.variantId,
+              variationName: productVariations.name,
+              optionValue: productVariationOptions.value,
+            })
+            .from(productVariantSelections)
+            .innerJoin(
+              productVariations,
+              eq(productVariations.id, productVariantSelections.variationId)
+            )
+            .innerJoin(
+              productVariationOptions,
+              eq(productVariationOptions.id, productVariantSelections.optionId)
+            )
+
+          for (const sel of componentSelections) {
+            if (componentVariantIds.includes(sel.variantId)) {
+              if (!componentVariantSelectionsMap.has(sel.variantId)) {
+                componentVariantSelectionsMap.set(sel.variantId, [])
+              }
+              componentVariantSelectionsMap.get(sel.variantId)!.push({
+                variationName: sel.variationName,
+                optionValue: sel.optionValue,
+              })
+            }
+          }
+
+          // For each product variant, find matching component variant
+          for (const productVariant of allProductVariants) {
+            const productSelections =
+              productVariantSelectionsMap.get(productVariant.id) || []
+
+            // Find matching component variant based on mapping rules
+            let matchingComponentVariant = componentVariants[0] // Default to first variant
+
+            if (component.variantMappingRules && component.variantMappingRules.length > 0) {
+              // Use mapping rules to find matching component variant
+              for (const componentVariant of componentVariants) {
+                const componentSelections =
+                  componentVariantSelectionsMap.get(componentVariant.id) || []
+                let matches = true
+
+                for (const rule of component.variantMappingRules) {
+                  const productSelection = productSelections.find(
+                    (s) => s.variationName === rule.productVariationName
+                  )
+
+                  if (rule.productVariationName && productSelection) {
+                    // Match by product variation name
+                    const componentSelection = componentSelections.find(
+                      (s) => s.variationName === rule.componentVariationName
+                    )
+                    if (
+                      !componentSelection ||
+                      componentSelection.optionValue !== productSelection.optionValue
+                    ) {
+                      matches = false
+                      break
+                    }
+                  } else if (rule.defaultOptionValue) {
+                    // Use default option value
+                    const componentSelection = componentSelections.find(
+                      (s) => s.variationName === rule.componentVariationName
+                    )
+                    if (
+                      !componentSelection ||
+                      componentSelection.optionValue !== rule.defaultOptionValue
+                    ) {
+                      matches = false
+                      break
+                    }
+                  }
+                }
+
+                if (matches) {
+                  matchingComponentVariant = componentVariant
+                  break
+                }
+              }
+            } else {
+              // Auto-match: if component has variations, try to match by variation name
+              if (componentVariantSelectionsMap.size > 0) {
+                for (const componentVariant of componentVariants) {
+                  const componentSelections =
+                    componentVariantSelectionsMap.get(componentVariant.id) || []
+                  let matches = true
+
+                  // Try to match each component variation with a product variation of the same name
+                  for (const compSel of componentSelections) {
+                    const productSel = productSelections.find(
+                      (s) =>
+                        s.variationName === compSel.variationName &&
+                        s.optionValue === compSel.optionValue
+                    )
+                    if (!productSel) {
+                      matches = false
+                      break
+                    }
+                  }
+
+                  if (matches) {
+                    matchingComponentVariant = componentVariant
+                    break
+                  }
+                }
+              }
+            }
+
+            // Create variant BOM entry
+            await tx.insert(variantBillOfMaterials).values({
+              productVariantId: productVariant.id,
+              componentVariantId: matchingComponentVariant.id,
+              quantityRequired: component.quantityRequired.toString(),
+            })
+          }
+        }
       }
 
       return product

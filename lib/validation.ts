@@ -21,6 +21,18 @@ export const productFormSchema = z.object({
     z.object({
       componentId: z.string().uuid(),
       quantityRequired: z.number().positive(),
+      // Variant mapping rules: maps component variation names to product variation names
+      // If a component variation name matches a product variation name, they are automatically matched
+      // If a component variation doesn't match, specify a default option value
+      variantMappingRules: z
+        .array(
+          z.object({
+            componentVariationName: z.string().min(1),
+            productVariationName: z.string().optional(), // If provided, match this product variation
+            defaultOptionValue: z.string().optional(), // If provided, use this option for all product variants
+          })
+        )
+        .optional(),
     })
   ),
   variations: z.array(

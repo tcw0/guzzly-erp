@@ -115,13 +115,14 @@ export const inventory = pgTable(
   })
 )
 
-export const billOfMaterials = pgTable("bill_of_materials", {
+// Variant-aware Bill of Materials - links product variants to component variants
+export const variantBillOfMaterials = pgTable("variant_bill_of_materials", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
-  productId: uuid("product_id")
-    .references(() => products.id, { onDelete: "cascade" })
+  productVariantId: uuid("product_variant_id")
+    .references(() => productVariants.id, { onDelete: "cascade" })
     .notNull(),
-  componentId: uuid("component_id")
-    .references(() => products.id, { onDelete: "cascade" })
+  componentVariantId: uuid("component_variant_id")
+    .references(() => productVariants.id, { onDelete: "cascade" })
     .notNull(),
   quantityRequired: numeric("quantity_required", {
     precision: 18,
@@ -145,7 +146,7 @@ export const billOfMaterials = pgTable("bill_of_materials", {
 // })
 
 export type Product = typeof products.$inferSelect
-export type BillOfMaterials = typeof billOfMaterials.$inferSelect
+export type VariantBillOfMaterials = typeof variantBillOfMaterials.$inferSelect
 export type ProductVariation = typeof productVariations.$inferSelect
 export type ProductVariationOption = typeof productVariationOptions.$inferSelect
 export type ProductVariant = typeof productVariants.$inferSelect

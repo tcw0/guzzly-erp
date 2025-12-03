@@ -4,7 +4,7 @@ import { sql, eq } from "drizzle-orm"
 import { db } from "@/db/drizzle"
 import {
   products,
-  billOfMaterials,
+  variantBillOfMaterials,
   inventory,
   inventoryMovements,
   productVariants,
@@ -53,11 +53,11 @@ export async function createOutput(params: OutputParams) {
           throw new Error(`Invalid variant for product ${output.productId}`)
         }
 
-        // Get bill of materials for the product
+        // Get variant-aware bill of materials for the product variant
         const bom = await tx
           .select()
-          .from(billOfMaterials)
-          .where(eq(billOfMaterials.productId, output.productId))
+          .from(variantBillOfMaterials)
+          .where(eq(variantBillOfMaterials.productVariantId, variantId))
 
         // Create output inventory movement
         await tx.insert(inventoryMovements).values({
@@ -81,30 +81,31 @@ export async function createOutput(params: OutputParams) {
             },
           })
 
-        // Process components consumption
-        // Note: For components, we consume from default variant (components typically don't have variations)
-        for (const component of bom) {
+        // Process components consumption using variant-aware BOM
+        for (const componentBom of bom) {
           const requiredQuantity =
-            parseFloat(component.quantityRequired.toString()) * output.quantity
+            parseFloat(componentBom.quantityRequired.toString()) * output.quantity
 
-          // Find default variant for component
-          const componentVariants = await tx
+          const componentVariantId = componentBom.componentVariantId
+
+          // Get component product ID from variant
+          const componentVariant = await tx
             .select()
             .from(productVariants)
-            .where(eq(productVariants.productId, component.componentId))
+            .where(eq(productVariants.id, componentVariantId))
             .limit(1)
 
-          if (!componentVariants[0]) {
+          if (!componentVariant[0]) {
             throw new Error(
-              `No variant found for component ${component.componentId}`
+              `Component variant ${componentVariantId} not found`
             )
           }
 
-          const componentVariantId = componentVariants[0].id
+          const componentProductId = componentVariant[0].productId
 
           // Create consumption movement
           await tx.insert(inventoryMovements).values({
-            productId: component.componentId,
+            productId: componentProductId,
             variantId: componentVariantId,
             quantity: (-requiredQuantity).toString(),
             action: "CONSUMPTION",
@@ -127,7 +128,7 @@ export async function createOutput(params: OutputParams) {
 
           if (parseFloat(result[0].newQuantity.toString()) < 0) {
             throw new Error(
-              `Insufficient inventory for component ${component.componentId}`
+              `Insufficient inventory for component variant ${componentVariantId}`
             )
           }
         }
