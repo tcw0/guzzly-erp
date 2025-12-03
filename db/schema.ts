@@ -6,6 +6,9 @@ import {
   numeric,
   timestamp,
   unique,
+  text,
+  jsonb,
+  boolean,
 } from "drizzle-orm/pg-core"
 import { PRODUCT_TYPES } from "@/constants/product-types"
 import { INVENTORY_ACTIONS } from "@/constants/inventory-actions"
@@ -150,10 +153,91 @@ export const variantBillOfMaterials = pgTable("variant_bill_of_materials", {
 //   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 // })
 
+// Shopify Integration Tables
+// Mapping table: Links ERP FINAL product variants to Shopify variants
+export const shopifyVariantMappings = pgTable("shopify_variant_mappings", {
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
+  // ERP side (only FINAL products)
+  productVariantId: uuid("product_variant_id")
+    .references(() => productVariants.id, { onDelete: "cascade" })
+    .notNull(),
+  // Shopify side
+  shopifyProductId: text("shopify_product_id").notNull(),
+  shopifyVariantId: text("shopify_variant_id").notNull().unique(),
+  // Sync metadata
+  syncStatus: text("sync_status").notNull().default("active"), // active, disabled, error
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  syncErrors: text("sync_errors"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  // Index for fast lookups during order processing
+  productVariantIdx: unique("shopify_variant_mapping_product_variant_idx").on(
+    table.productVariantId
+  ),
+}))
+
+// Track Shopify orders for reconciliation and audit
+export const shopifyOrders = pgTable("shopify_orders", {
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
+  shopifyOrderId: text("shopify_order_id").notNull().unique(),
+  shopifyOrderNumber: text("shopify_order_number").notNull(),
+  status: text("status").notNull(), // fulfilled, cancelled, refunded
+  fulfilledAt: timestamp("fulfilled_at", { withTimezone: true }),
+  totalAmount: numeric("total_amount", { precision: 18, scale: 2 }),
+  customerEmail: text("customer_email"),
+  // Link to our inventory movement when processed
+  inventoryMovementId: uuid("inventory_movement_id").references(
+    () => inventoryMovements.id,
+    { onDelete: "set null" }
+  ),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  errorMessage: text("error_message"),
+  rawPayload: jsonb("raw_payload"), // Store full webhook data for debugging
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+})
+
+// Order line items with SKU mapping details
+export const shopifyOrderItems = pgTable("shopify_order_items", {
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
+  orderId: uuid("order_id")
+    .references(() => shopifyOrders.id, { onDelete: "cascade" })
+    .notNull(),
+  shopifyLineItemId: text("shopify_line_item_id").notNull(),
+  shopifyProductId: text("shopify_product_id").notNull(),
+  shopifyVariantId: text("shopify_variant_id").notNull(),
+  sku: text("sku").notNull(),
+  // Mapped ERP variant (NULL if mapping failed)
+  productVariantId: uuid("product_variant_id").references(
+    () => productVariants.id,
+    { onDelete: "set null" }
+  ),
+  quantity: numeric("quantity", { precision: 18, scale: 0 }).notNull(),
+  price: numeric("price", { precision: 18, scale: 2 }),
+  mappingStatus: text("mapping_status").notNull(), // mapped, unmapped, error
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+})
+
+// Webhook audit log for compliance and debugging
+export const shopifyWebhookLogs = pgTable("shopify_webhook_logs", {
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
+  topic: text("topic").notNull(), // orders/fulfilled, orders/cancelled, etc.
+  shopifyOrderId: text("shopify_order_id"),
+  status: text("status").notNull(), // received, processed, failed
+  errorMessage: text("error_message"),
+  payload: jsonb("payload"),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+})
+
 export type Product = typeof products.$inferSelect
 export type VariantBillOfMaterials = typeof variantBillOfMaterials.$inferSelect
 export type ProductVariation = typeof productVariations.$inferSelect
 export type ProductVariationOption = typeof productVariationOptions.$inferSelect
 export type ProductVariant = typeof productVariants.$inferSelect
 export type ProductVariantSelection = typeof productVariantSelections.$inferSelect
+export type ShopifyVariantMapping = typeof shopifyVariantMappings.$inferSelect
+export type ShopifyOrder = typeof shopifyOrders.$inferSelect
+export type ShopifyOrderItem = typeof shopifyOrderItems.$inferSelect
+export type ShopifyWebhookLog = typeof shopifyWebhookLogs.$inferSelect
 // export type ManufacturingStep = typeof manufacturingSteps.$inferSelect

@@ -119,3 +119,12 @@ export const purchaseFormSchema = z.object({
 
 export type PurchaseFormValues = z.infer<typeof purchaseFormSchema>
 export type PurchaseParams = PurchaseFormValues
+
+// Shopify variant mapping schema
+export const shopifyMappingSchema = z.object({
+  shopifyProductId: z.string().min(1, { message: "Shopify product ID is required" }),
+  shopifyVariantId: z.string().min(1, { message: "Shopify variant ID is required" }),
+  erpVariantId: z.string().uuid({ message: "Please select a valid ERP product" }),
+})
+
+export type ShopifyMappingFormValues = z.infer<typeof shopifyMappingSchema>
