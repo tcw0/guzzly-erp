@@ -207,7 +207,7 @@ export default function PurchaseForm() {
                                   placeholder="Quantity"
                                   {...field}
                                   onChange={(e) =>
-                                    field.onChange(parseFloat(e.target.value))
+                                    field.onChange(parseInt(e.target.value) || 0)
                                   }
                                 />
                               </FormControl>

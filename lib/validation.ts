@@ -17,10 +17,18 @@ export const productFormSchema = z.object({
     .trim()
     .min(1, { message: "Unit is required" })
     .max(32, { message: "Unit must be 32 characters or less" }),
+  minimumStockLevel: z
+    .number()
+    .int({ message: "Minimum stock level must be a whole number" })
+    .min(0, { message: "Minimum stock level must be 0 or greater" })
+    .default(0),
   components: z.array(
     z.object({
       componentId: z.string().uuid(),
-      quantityRequired: z.number().positive(),
+      quantityRequired: z
+        .number()
+        .int({ message: "Quantity must be a whole number" })
+        .positive(),
       // Variant mapping rules: maps component variation names to product variation names
       // Strategy can be: "mapped" (explicit mapping to product variation), or "default" (fixed value)
       variantMappingRules: z
@@ -81,7 +89,10 @@ export const outputFormSchema = z.object({
       z.object({
         productId: z.string().uuid(),
         variantId: z.string().uuid().optional(), // Optional for backward compatibility, but required when product has variations
-        quantity: z.number().positive(),
+        quantity: z
+          .number()
+          .int({ message: "Quantity must be a whole number" })
+          .positive(),
       })
     )
     .min(1, { message: "At least one product output is required" }),
@@ -97,7 +108,10 @@ export const purchaseFormSchema = z.object({
       z.object({
         productId: z.string().uuid(),
         variantId: z.string().uuid().optional(), // Optional for backward compatibility, but required when product has variations
-        quantity: z.number().positive(),
+        quantity: z
+          .number()
+          .int({ message: "Quantity must be a whole number" })
+          .positive(),
       })
     )
     .min(1, { message: "At least one product purchase is required" }),

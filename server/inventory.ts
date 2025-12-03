@@ -19,6 +19,8 @@ export type InventoryItem = {
   unit: string
   variantId: string
   quantityOnHand: string
+  minimumStockLevel: string
+  needsReorder: boolean
   variantSelections: Array<{
     variationName: string
     optionValue: string
@@ -74,16 +76,23 @@ export async function getInventory() {
       }
     }
 
-    const data: InventoryItem[] = inventoryRows.map((r) => ({
-      id: r.variant.id,
-      productId: r.product.id,
-      productName: r.product.name,
-      type: r.product.type as InventoryItem["type"],
-      unit: r.product.unit,
-      variantId: r.variant.id,
-      quantityOnHand: r.inventory.quantityOnHand.toString(),
-      variantSelections: selectionsMap.get(r.variant.id) || [],
-    }))
+    const data: InventoryItem[] = inventoryRows.map((r) => {
+      const quantityOnHand = parseFloat(r.inventory.quantityOnHand.toString())
+      const minimumStockLevel = parseFloat(r.variant.minimumStockLevel.toString())
+      
+      return {
+        id: r.variant.id,
+        productId: r.product.id,
+        productName: r.product.name,
+        type: r.product.type as InventoryItem["type"],
+        unit: r.product.unit,
+        variantId: r.variant.id,
+        quantityOnHand: r.inventory.quantityOnHand.toString(),
+        minimumStockLevel: r.variant.minimumStockLevel.toString(),
+        needsReorder: quantityOnHand <= minimumStockLevel,
+        variantSelections: selectionsMap.get(r.variant.id) || [],
+      }
+    })
 
     return { success: true as const, data }
   } catch (error) {

@@ -120,7 +120,7 @@ function generateOptionCode(optionValue: string): string {
 
 export const createProduct = async (params: ProductParams) => {
   try {
-    const { components, variations = [], ...productData } = params
+    const { components, variations = [], minimumStockLevel, ...productData } = params
 
     const newProduct = await db.transaction(async (tx) => {
       // Create the product
@@ -208,6 +208,7 @@ export const createProduct = async (params: ProductParams) => {
           return {
             productId: product.id,
             sku: sku,
+            minimumStockLevel: minimumStockLevel.toString(),
           }
         })
 
@@ -263,6 +264,7 @@ export const createProduct = async (params: ProductParams) => {
           .values({
             productId: product.id,
             sku: `${productCode}-DEFAULT-${shortProductId}`,
+            minimumStockLevel: minimumStockLevel.toString(),
           })
           .returning()
 

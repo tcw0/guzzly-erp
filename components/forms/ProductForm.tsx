@@ -67,6 +67,7 @@ export default function ProductForm() {
       name: "",
       type: productTypeEnum.enum.RAW,
       unit: "",
+      minimumStockLevel: 0,
       components: [],
       variations: [],
     },
@@ -314,6 +315,35 @@ export default function ProductForm() {
             </FormItem>
           )}
         />
+        
+        <FormField
+          control={form.control}
+          name="minimumStockLevel"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Minimum Stock Level</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  step="1"
+                  min="0"
+                  placeholder="Minimum quantity before alert (e.g., 100)"
+                  {...field}
+                  onChange={(e) =>
+                    field.onChange(
+                      e.target.value === "" ? 0 : parseInt(e.target.value)
+                    )
+                  }
+                  className="book-form_input"
+                />
+              </FormControl>
+              <FormMessage />
+              <p className="text-xs text-muted-foreground mt-1">
+                Alert when inventory falls below this quantity
+              </p>
+            </FormItem>
+          )}
+        />
         {form.watch("type") !== productTypeEnum.enum.RAW && (
           <FormField
             control={form.control}
@@ -379,7 +409,7 @@ export default function ProductForm() {
                                     className="book-form_input"
                                     {...field}
                                     onChange={(e) =>
-                                      field.onChange(parseFloat(e.target.value))
+                                      field.onChange(parseInt(e.target.value) || 0)
                                     }
                                   />
                                 </FormControl>

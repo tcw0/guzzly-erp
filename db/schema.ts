@@ -51,6 +51,9 @@ export const productVariants = pgTable("product_variants", {
     .references(() => products.id, { onDelete: "cascade" })
     .notNull(),
   sku: varchar("sku", { length: 255 }).notNull(), // Required unique SKU code
+  minimumStockLevel: numeric("minimum_stock_level", { precision: 18, scale: 0 })
+    .notNull()
+    .default("0"), // Minimum quantity before alert is needed
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (table) => ({
   skuUnique: unique("product_variants_sku_unique").on(table.sku),
