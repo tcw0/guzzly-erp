@@ -111,19 +111,19 @@ export default function ProductForm() {
         const productVariations = form.getValues("variations") || []
         
         if (componentData.data.variations.length > 0 && currentRules.length === 0) {
-          // Auto-match: if component variation name matches product variation name
-          const autoRules = componentData.data.variations.map((compVar) => {
+          // Initialize mapping rules with "mapped" strategy by default
+          const initialRules = componentData.data.variations.map((compVar) => {
             const matchingProductVar = productVariations.find(
               (prodVar) => prodVar.name === compVar.variation.name
             )
             return {
               componentVariationName: compVar.variation.name,
-              strategy: matchingProductVar ? "mapped" as const : "auto" as const,
+              strategy: "mapped" as const,
               productVariationName: matchingProductVar?.name,
               defaultOptionValue: undefined,
             }
           })
-          form.setValue(`components.${index}.variantMappingRules`, autoRules)
+          form.setValue(`components.${index}.variantMappingRules`, initialRules)
         }
       }
     },
@@ -413,7 +413,7 @@ export default function ProductForm() {
                                 (r) => r.componentVariationName === compVar.variation.name
                               ) || { 
                                 componentVariationName: compVar.variation.name,
-                                strategy: "auto" as const,
+                                strategy: "mapped" as const,
                               }
                               
                               const updateRule = (updates: Partial<typeof rule>) => {
@@ -452,8 +452,8 @@ export default function ProductForm() {
                                   </div>
                                   
                                   <RadioGroup
-                                    value={rule.strategy || "auto"}
-                                    onValueChange={(value: "auto" | "mapped" | "default") => {
+                                    value={rule.strategy || "mapped"}
+                                    onValueChange={(value: "mapped" | "default") => {
                                       updateRule({
                                         strategy: value,
                                         productVariationName: value === "mapped" ? rule.productVariationName : undefined,
@@ -462,12 +462,6 @@ export default function ProductForm() {
                                     }}
                                     className="gap-2"
                                   >
-                                    <div className="flex items-center space-x-2">
-                                      <RadioGroupItem value="auto" id={`${compVar.variation.id}-auto`} />
-                                      <Label htmlFor={`${compVar.variation.id}-auto`} className="text-sm font-normal cursor-pointer">
-                                        Auto-match by name
-                                      </Label>
-                                    </div>
                                     <div className="flex items-center space-x-2">
                                       <RadioGroupItem value="mapped" id={`${compVar.variation.id}-mapped`} />
                                       <Label htmlFor={`${compVar.variation.id}-mapped`} className="text-sm font-normal cursor-pointer">
@@ -484,7 +478,9 @@ export default function ProductForm() {
                                   
                                   {rule.strategy === "mapped" && (
                                     <FormItem>
-                                      <FormLabel className="text-xs">Select Product Variation</FormLabel>
+                                      <FormLabel className="text-xs">
+                                        Select Product Variation <span className="text-destructive">*</span>
+                                      </FormLabel>
                                       <Select
                                         value={rule.productVariationName || ""}
                                         onValueChange={(value) => {
@@ -504,12 +500,19 @@ export default function ProductForm() {
                                           ))}
                                         </SelectContent>
                                       </Select>
+                                      {!rule.productVariationName && (
+                                        <p className="text-xs text-destructive mt-1">
+                                          Please select a product variation
+                                        </p>
+                                      )}
                                     </FormItem>
                                   )}
                                   
                                   {rule.strategy === "default" && (
                                     <FormItem>
-                                      <FormLabel className="text-xs">Select Default Value</FormLabel>
+                                      <FormLabel className="text-xs">
+                                        Select Default Value <span className="text-destructive">*</span>
+                                      </FormLabel>
                                       <Select
                                         value={rule.defaultOptionValue || ""}
                                         onValueChange={(value) => {
@@ -529,13 +532,12 @@ export default function ProductForm() {
                                           ))}
                                         </SelectContent>
                                       </Select>
+                                      {!rule.defaultOptionValue && (
+                                        <p className="text-xs text-destructive mt-1">
+                                          Please select a default value
+                                        </p>
+                                      )}
                                     </FormItem>
-                                  )}
-                                  
-                                  {rule.strategy === "auto" && (
-                                    <p className="text-xs text-muted-foreground italic">
-                                      Will automatically match "{compVar.variation.name}" with product variation of the same name
-                                    </p>
                                   )}
                                 </div>
                               )

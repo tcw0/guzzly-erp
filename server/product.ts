@@ -398,23 +398,11 @@ export const createProduct = async (params: ProductParams) => {
                       matches = false
                       break
                     }
-                  } else if (rule.strategy === "auto") {
-                    // Strategy: Auto-match by variation name
-                    const productSelection = productSelections.find(
-                      (s) => s.variationName === rule.componentVariationName
+                  } else {
+                    // Invalid rule configuration - should not happen with proper validation
+                    throw new Error(
+                      `Invalid mapping rule for component variation "${rule.componentVariationName}"`
                     )
-                    
-                    if (productSelection) {
-                      // Found matching variation name in product, match option values
-                      if (
-                        !componentSelection ||
-                        componentSelection.optionValue !== productSelection.optionValue
-                      ) {
-                        matches = false
-                        break
-                      }
-                    }
-                    // If no matching product variation found, auto strategy allows any component option
                   }
                 }
 
@@ -424,32 +412,10 @@ export const createProduct = async (params: ProductParams) => {
                 }
               }
             } else {
-              // No mapping rules: default to auto-match by variation name
-              if (componentVariantSelectionsMap.size > 0) {
-                for (const componentVariant of componentVariants) {
-                  const componentSelections =
-                    componentVariantSelectionsMap.get(componentVariant.id) || []
-                  let matches = true
-
-                  // Try to match each component variation with a product variation of the same name
-                  for (const compSel of componentSelections) {
-                    const productSel = productSelections.find(
-                      (s) =>
-                        s.variationName === compSel.variationName &&
-                        s.optionValue === compSel.optionValue
-                    )
-                    if (!productSel) {
-                      matches = false
-                      break
-                    }
-                  }
-
-                  if (matches) {
-                    matchingComponentVariant = componentVariant
-                    break
-                  }
-                }
-              }
+              // No mapping rules provided - this should not happen for components with variations
+              throw new Error(
+                `Variant mapping rules are required for component ${component.componentId} which has variations`
+              )
             }
 
             // Create variant BOM entry

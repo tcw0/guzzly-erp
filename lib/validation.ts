@@ -22,15 +22,31 @@ export const productFormSchema = z.object({
       componentId: z.string().uuid(),
       quantityRequired: z.number().positive(),
       // Variant mapping rules: maps component variation names to product variation names
-      // Strategy can be: "auto" (auto-match by name), "mapped" (explicit mapping), or "default" (fixed value)
+      // Strategy can be: "mapped" (explicit mapping to product variation), or "default" (fixed value)
       variantMappingRules: z
         .array(
           z.object({
             componentVariationName: z.string().min(1),
-            strategy: z.enum(["auto", "mapped", "default"]),
+            strategy: z.enum(["mapped", "default"]),
             productVariationName: z.string().optional(), // Used when strategy is "mapped"
             defaultOptionValue: z.string().optional(), // Used when strategy is "default"
           })
+          .refine(
+            (data) => {
+              // When strategy is "mapped", productVariationName must be provided
+              if (data.strategy === "mapped") {
+                return !!data.productVariationName
+              }
+              // When strategy is "default", defaultOptionValue must be provided
+              if (data.strategy === "default") {
+                return !!data.defaultOptionValue
+              }
+              return true
+            },
+            {
+              message: "Please select a value for the chosen mapping strategy",
+            }
+          )
         )
         .optional(),
     })
