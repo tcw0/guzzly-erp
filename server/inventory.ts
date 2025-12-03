@@ -18,6 +18,7 @@ export type InventoryItem = {
   type: "RAW" | "INTERMEDIATE" | "FINAL"
   unit: string
   variantId: string
+  sku: string
   quantityOnHand: string
   minimumStockLevel: string
   needsReorder: boolean
@@ -87,6 +88,7 @@ export async function getInventory() {
         type: r.product.type as InventoryItem["type"],
         unit: r.product.unit,
         variantId: r.variant.id,
+        sku: r.variant.sku,
         quantityOnHand: r.inventory.quantityOnHand.toString(),
         minimumStockLevel: r.variant.minimumStockLevel.toString(),
         needsReorder: quantityOnHand <= minimumStockLevel,

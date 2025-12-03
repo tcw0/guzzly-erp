@@ -1,4 +1,4 @@
-import { InventoryTable } from "@/components/InventoryTable"
+import { HierarchicalInventoryTable } from "@/components/HierarchicalInventoryTable"
 import { getInventory } from "@/server/inventory"
 
 export default async function Inventory() {
@@ -14,9 +14,9 @@ export default async function Inventory() {
           <h1 className="text-2xl font-bold tracking-tight">Inventory</h1>
         </div>
 
-        <InventoryTable title="Raw Materials" data={raw} />
-        <InventoryTable title="Intermediate Products" data={intermediate} />
-        <InventoryTable title="Final Products" data={final} />
+        <HierarchicalInventoryTable title="Raw Materials" data={raw} />
+        <HierarchicalInventoryTable title="Intermediate Products" data={intermediate} />
+        <HierarchicalInventoryTable title="Final Products" data={final} />
       </div>
     </section>
   )
