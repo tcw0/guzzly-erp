@@ -133,7 +133,9 @@ export async function getERPFinalProducts() {
           ...variant,
           variations: selections,
           variantDisplay: selections.length
-            ? `${variant.productName} (${selections.map((s) => s.optionValue).join(", ")})`
+            ? `${variant.productName} (${selections
+                .map((s) => s.optionValue)
+                .join(", ")})`
             : variant.productName,
         }
       })
@@ -166,6 +168,7 @@ export async function getExistingMappings() {
         shopifyProductId: shopifyVariantMappings.shopifyProductId,
         shopifyVariantId: shopifyVariantMappings.shopifyVariantId,
         productVariantId: shopifyVariantMappings.productVariantId,
+        quantity: shopifyVariantMappings.quantity,
         syncStatus: shopifyVariantMappings.syncStatus,
         lastSyncedAt: shopifyVariantMappings.lastSyncedAt,
         syncErrors: shopifyVariantMappings.syncErrors,
@@ -180,10 +183,46 @@ export async function getExistingMappings() {
       )
       .leftJoin(products, eq(productVariants.productId, products.id))
 
+    // Group mappings by Shopify variant (since one variant can have multiple components)
+    const groupedMappings = mappings.reduce((acc, mapping) => {
+      const existing = acc.find(
+        (m) => m.shopifyVariantId === mapping.shopifyVariantId
+      )
+
+      if (existing) {
+        existing.components.push({
+          id: mapping.id,
+          productVariantId: mapping.productVariantId,
+          quantity: mapping.quantity,
+          erpProductName: mapping.erpProductName,
+          erpVariantSku: mapping.erpVariantSku,
+        })
+      } else {
+        acc.push({
+          shopifyProductId: mapping.shopifyProductId,
+          shopifyVariantId: mapping.shopifyVariantId,
+          syncStatus: mapping.syncStatus,
+          lastSyncedAt: mapping.lastSyncedAt,
+          syncErrors: mapping.syncErrors,
+          components: [
+            {
+              id: mapping.id,
+              productVariantId: mapping.productVariantId,
+              quantity: mapping.quantity,
+              erpProductName: mapping.erpProductName,
+              erpVariantSku: mapping.erpVariantSku,
+            },
+          ],
+        })
+      }
+
+      return acc
+    }, [] as any[])
+
     return {
       success: true,
-      mappings,
-      totalCount: mappings.length,
+      mappings: groupedMappings,
+      totalCount: groupedMappings.length, // Count unique Shopify variants
     }
   } catch (error) {
     console.error("Error fetching existing mappings:", error)
@@ -197,83 +236,79 @@ export async function getExistingMappings() {
 }
 
 /**
- * Create a manual mapping between Shopify variant and ERP variant
+ * Create a manual mapping between Shopify variant and ERP components
+ * Supports multiple components with quantities (e.g., ski pole set = 2 grips + 2 sticks + ...)
  */
 export async function createVariantMapping(data: {
   shopifyProductId: string
   shopifyVariantId: string
-  erpVariantId: string
+  components: Array<{
+    erpVariantId: string
+    quantity: number
+  }>
 }) {
   try {
-    // Validate ERP variant is FINAL type
-    const [erpVariant] = await db
-      .select({
-        variantId: productVariants.id,
-        productType: products.type,
-      })
-      .from(productVariants)
-      .leftJoin(products, eq(productVariants.productId, products.id))
-      .where(eq(productVariants.id, data.erpVariantId))
-      .limit(1)
-
-    if (!erpVariant) {
+    // Validate: at least one component
+    if (!data.components || data.components.length === 0) {
       return {
         success: false,
-        error: "ERP variant not found",
+        error: "At least one component is required",
       }
     }
 
-    if (erpVariant.productType !== "FINAL") {
-      return {
-        success: false,
-        error: "Only FINAL products can be mapped to Shopify",
-      }
-    }
-
-    // Check if mapping already exists
-    const [existing] = await db
-      .select()
-      .from(shopifyVariantMappings)
+    // Delete existing mappings for this Shopify variant (to replace with new component set)
+    await db
+      .delete(shopifyVariantMappings)
       .where(eq(shopifyVariantMappings.shopifyVariantId, data.shopifyVariantId))
-      .limit(1)
 
-    if (existing) {
-      // Update existing mapping
-      const [updated] = await db
-        .update(shopifyVariantMappings)
-        .set({
-          productVariantId: data.erpVariantId,
-          syncStatus: "active",
-          lastSyncedAt: new Date(),
-          syncErrors: null,
-          updatedAt: new Date(),
+    // Create new mappings for each component
+    const createdMappings = []
+    for (const component of data.components) {
+      // Validate each component variant
+      const [componentVariant] = await db
+        .select({
+          id: productVariants.id,
+          productType: products.type,
         })
-        .where(eq(shopifyVariantMappings.id, existing.id))
-        .returning()
+        .from(productVariants)
+        .leftJoin(products, eq(productVariants.productId, products.id))
+        .where(eq(productVariants.id, component.erpVariantId))
+        .limit(1)
 
-      return {
-        success: true,
-        mapping: updated,
-        message: "Mapping updated successfully",
+      if (!componentVariant) {
+        return {
+          success: false,
+          error: `Component variant ${component.erpVariantId} not found`,
+        }
       }
-    } else {
-      // Create new mapping
+
+      if (componentVariant.productType !== "FINAL") {
+        return {
+          success: false,
+          error: "Only FINAL products can be mapped to Shopify",
+        }
+      }
+
+      // Create mapping for this component
       const [created] = await db
         .insert(shopifyVariantMappings)
         .values({
           shopifyProductId: data.shopifyProductId,
           shopifyVariantId: data.shopifyVariantId,
-          productVariantId: data.erpVariantId,
+          productVariantId: component.erpVariantId,
+          quantity: component.quantity.toString(),
           syncStatus: "active",
           lastSyncedAt: new Date(),
         })
         .returning()
 
-      return {
-        success: true,
-        mapping: created,
-        message: "Mapping created successfully",
-      }
+      createdMappings.push(created)
+    }
+
+    return {
+      success: true,
+      mappings: createdMappings,
+      message: `Mapping created successfully with ${createdMappings.length} component(s)`,
     }
   } catch (error) {
     console.error("Error creating variant mapping:", error)
@@ -299,48 +334,6 @@ export async function deleteVariantMapping(mappingId: string) {
     }
   } catch (error) {
     console.error("Error deleting variant mapping:", error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    }
-  }
-}
-
-/**
- * Bulk create mappings (for CSV import or batch operations)
- */
-export async function bulkCreateMappings(
-  mappings: Array<{
-    shopifyProductId: string
-    shopifyVariantId: string
-    erpVariantId: string
-  }>
-) {
-  try {
-    const results = {
-      success: 0,
-      failed: 0,
-      errors: [] as string[],
-    }
-
-    for (const mapping of mappings) {
-      const result = await createVariantMapping(mapping)
-      if (result.success) {
-        results.success++
-      } else {
-        results.failed++
-        results.errors.push(
-          `Shopify Variant ${mapping.shopifyVariantId}: ${result.error}`
-        )
-      }
-    }
-
-    return {
-      success: true,
-      results,
-    }
-  } catch (error) {
-    console.error("Error bulk creating mappings:", error)
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",

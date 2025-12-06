@@ -120,11 +120,17 @@ export const purchaseFormSchema = z.object({
 export type PurchaseFormValues = z.infer<typeof purchaseFormSchema>
 export type PurchaseParams = PurchaseFormValues
 
-// Shopify variant mapping schema
+// Shopify variant mapping schema - supports multiple components
+export const shopifyComponentMappingSchema = z.object({
+  erpVariantId: z.string().uuid({ message: "Please select a valid ERP product" }),
+  quantity: z.coerce.number().positive({ message: "Quantity must be positive" }).default(1),
+})
+
 export const shopifyMappingSchema = z.object({
   shopifyProductId: z.string().min(1, { message: "Shopify product ID is required" }),
   shopifyVariantId: z.string().min(1, { message: "Shopify variant ID is required" }),
-  erpVariantId: z.string().uuid({ message: "Please select a valid ERP product" }),
+  components: z.array(shopifyComponentMappingSchema).min(1, { message: "At least one component is required" }),
 })
 
+export type ShopifyComponentMapping = z.infer<typeof shopifyComponentMappingSchema>
 export type ShopifyMappingFormValues = z.infer<typeof shopifyMappingSchema>

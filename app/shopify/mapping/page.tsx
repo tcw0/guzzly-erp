@@ -24,8 +24,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import {
   fetchShopifyProducts,
@@ -35,7 +46,17 @@ import {
   deleteVariantMapping,
   getMappingStats,
 } from "@/server/shopify-sync"
-import { Loader2, RefreshCw, CheckCircle, XCircle, Search } from "lucide-react"
+import {
+  Loader2,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
+  Search,
+  Plus,
+  Trash2,
+  Edit,
+  Package,
+} from "lucide-react"
 
 interface ShopifyVariant {
   shopifyProductId: string
@@ -59,12 +80,21 @@ interface ERPVariant {
   }>
 }
 
-interface Mapping {
-  id: string
-  shopifyVariantId: string
+interface ComponentMapping {
+  id?: string
   productVariantId: string
+  quantity: string
   erpProductName: string | null
   erpVariantSku: string | null
+}
+
+interface Mapping {
+  shopifyProductId: string
+  shopifyVariantId: string
+  syncStatus: string
+  lastSyncedAt: string | null
+  syncErrors: string | null
+  components: ComponentMapping[]
 }
 
 export default function ShopifyMappingPage() {
@@ -78,8 +108,15 @@ export default function ShopifyMappingPage() {
     "all" | "mapped" | "unmapped"
   >("all")
 
-  // Track temporary selections (before saving)
-  const [selections, setSelections] = useState<Record<string, string>>({})
+  // Dialog state for editing component mappings
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingVariant, setEditingVariant] = useState<ShopifyVariant | null>(
+    null
+  )
+  const [componentDraft, setComponentDraft] = useState<
+    Array<{ erpVariantId: string; quantity: number }>
+  >([])
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -110,12 +147,6 @@ export default function ShopifyMappingPage() {
 
       if (mappingsResult.success) {
         setMappings(mappingsResult.mappings as Mapping[])
-        // Initialize selections with existing mappings
-        const initialSelections: Record<string, string> = {}
-        mappingsResult.mappings.forEach((m: Mapping) => {
-          initialSelections[m.shopifyVariantId] = m.productVariantId
-        })
-        setSelections(initialSelections)
       }
 
       if (statsResult.success && statsResult.stats) {
@@ -129,46 +160,94 @@ export default function ShopifyMappingPage() {
     }
   }
 
-  async function handleSaveMapping(shopifyVariant: ShopifyVariant) {
-    const erpVariantId = selections[shopifyVariant.shopifyVariantId]
-    if (!erpVariantId) {
-      toast.error("Please select an ERP product first")
+  function openMappingDialog(shopifyVariant: ShopifyVariant) {
+    setEditingVariant(shopifyVariant)
+    
+    // Load existing components if any
+    const existing = getMappingForShopifyVariant(shopifyVariant.shopifyVariantId)
+    if (existing && existing.components.length > 0) {
+      setComponentDraft(
+        existing.components.map((c) => ({
+          erpVariantId: c.productVariantId,
+          quantity: parseFloat(c.quantity),
+        }))
+      )
+    } else {
+      // Start with one empty component
+      setComponentDraft([{ erpVariantId: "", quantity: 1 }])
+    }
+    
+    setDialogOpen(true)
+  }
+
+  function addComponent() {
+    setComponentDraft([...componentDraft, { erpVariantId: "", quantity: 1 }])
+  }
+
+  function removeComponent(index: number) {
+    setComponentDraft(componentDraft.filter((_, i) => i !== index))
+  }
+
+  function updateComponent(
+    index: number,
+    field: "erpVariantId" | "quantity",
+    value: string | number
+  ) {
+    const updated = [...componentDraft]
+    updated[index] = { ...updated[index], [field]: value }
+    setComponentDraft(updated)
+  }
+
+  async function handleSaveMapping() {
+    if (!editingVariant) return
+
+    // Validate: all components must have ERP variant selected
+    const invalidComponents = componentDraft.filter((c) => !c.erpVariantId)
+    if (invalidComponents.length > 0) {
+      toast.error("Please select an ERP product for all components")
       return
     }
 
+    // Validate: at least one component
+    if (componentDraft.length === 0) {
+      toast.error("Please add at least one component")
+      return
+    }
+
+    setSaving(true)
     try {
       const result = await createVariantMapping({
-        shopifyProductId: shopifyVariant.shopifyProductId,
-        shopifyVariantId: shopifyVariant.shopifyVariantId,
-        erpVariantId,
+        shopifyProductId: editingVariant.shopifyProductId,
+        shopifyVariantId: editingVariant.shopifyVariantId,
+        components: componentDraft,
       })
 
       if (result.success) {
         toast.success(result.message)
-        await loadData() // Reload to update stats
+        setDialogOpen(false)
+        setEditingVariant(null)
+        setComponentDraft([])
+        await loadData()
       } else {
         toast.error(result.error || "Failed to save mapping")
       }
     } catch (error) {
       toast.error("An error occurred while saving")
       console.error(error)
+    } finally {
+      setSaving(false)
     }
   }
 
-  async function handleDeleteMapping(
-    mappingId: string,
-    shopifyVariantId: string
-  ) {
+  async function handleDeleteMapping(shopifyVariantId: string) {
+    const mapping = getMappingForShopifyVariant(shopifyVariantId)
+    if (!mapping || !mapping.components[0]?.id) return
+
     try {
-      const result = await deleteVariantMapping(mappingId)
+      // Delete first component's mapping (will cascade delete all components)
+      const result = await deleteVariantMapping(mapping.components[0].id)
       if (result.success) {
         toast.success("Mapping deleted")
-        // Remove from local state
-        setSelections((prev) => {
-          const updated = { ...prev }
-          delete updated[shopifyVariantId]
-          return updated
-        })
         await loadData()
       } else {
         toast.error(result.error || "Failed to delete mapping")
@@ -322,7 +401,7 @@ export default function ShopifyMappingPage() {
                     <TableHead>Status</TableHead>
                     <TableHead>Shopify Product</TableHead>
                     <TableHead>Shopify SKU</TableHead>
-                    <TableHead>ERP Product (FINAL)</TableHead>
+                    <TableHead>ERP Components</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -342,9 +421,6 @@ export default function ShopifyMappingPage() {
                         shopifyVariant.shopifyVariantId
                       )
                       const isMapped = !!existingMapping
-                      const hasUnsavedChanges =
-                        selections[shopifyVariant.shopifyVariantId] !==
-                        existingMapping?.productVariantId
 
                       return (
                         <TableRow key={shopifyVariant.shopifyVariantId}>
@@ -380,75 +456,68 @@ export default function ShopifyMappingPage() {
                             </code>
                           </TableCell>
                           <TableCell>
-                            <Select
-                              value={
-                                selections[shopifyVariant.shopifyVariantId] ||
-                                ""
-                              }
-                              onValueChange={(value) => {
-                                setSelections((prev) => ({
-                                  ...prev,
-                                  [shopifyVariant.shopifyVariantId]: value,
-                                }))
-                              }}
-                            >
-                              <SelectTrigger className="w-[300px]">
-                                <SelectValue placeholder="Select ERP product..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {erpVariants.map((erpVariant) => (
-                                  <SelectItem
-                                    key={
-                                      erpVariant.variantId ||
-                                      erpVariant.productId
-                                    }
-                                    value={
-                                      erpVariant.variantId ||
-                                      erpVariant.productId
-                                    }
-                                  >
-                                    <div className="flex flex-col">
-                                      <span>
-                                        {erpVariant.variantDisplay ||
-                                          erpVariant.productName}
+                            {isMapped && existingMapping ? (
+                              <div className="space-y-1">
+                                {existingMapping.components.map(
+                                  (component, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="flex items-center gap-2 text-sm"
+                                    >
+                                      <Package className="h-3 w-3 text-muted-foreground" />
+                                      <span className="font-medium">
+                                        {component.quantity}×
                                       </span>
-                                      {erpVariant.variantSku && (
-                                        <span className="text-xs text-muted-foreground">
-                                          SKU: {erpVariant.variantSku}
-                                        </span>
+                                      <span>
+                                        {component.erpProductName || "Unknown"}
+                                      </span>
+                                      {component.erpVariantSku && (
+                                        <code className="text-xs bg-muted px-1 rounded">
+                                          {component.erpVariantSku}
+                                        </code>
                                       )}
                                     </div>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                                  )
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">
+                                No components mapped
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
-                              {!isMapped || hasUnsavedChanges ? (
-                                <Button
-                                  size="sm"
-                                  onClick={() =>
-                                    handleSaveMapping(shopifyVariant)
-                                  }
-                                  disabled={
-                                    !selections[shopifyVariant.shopifyVariantId]
-                                  }
-                                >
-                                  Save
-                                </Button>
-                              ) : (
+                              <Button
+                                size="sm"
+                                variant={isMapped ? "outline" : "default"}
+                                onClick={() =>
+                                  openMappingDialog(shopifyVariant)
+                                }
+                              >
+                                {isMapped ? (
+                                  <>
+                                    <Edit className="h-3 w-3 mr-1" />
+                                    Edit
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    Map
+                                  </>
+                                )}
+                              </Button>
+                              {isMapped && (
                                 <Button
                                   size="sm"
                                   variant="destructive"
                                   onClick={() =>
                                     handleDeleteMapping(
-                                      existingMapping.id,
                                       shopifyVariant.shopifyVariantId
                                     )
                                   }
                                 >
-                                  Remove
+                                  <Trash2 className="h-3 w-3" />
                                 </Button>
                               )}
                             </div>
@@ -463,6 +532,152 @@ export default function ShopifyMappingPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Component Mapping Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>Map ERP Components</DialogTitle>
+            <DialogDescription>
+              {editingVariant && (
+                <>
+                  Configure which ERP products and quantities are needed for{" "}
+                  <strong>{editingVariant.productTitle}</strong>
+                  {editingVariant.variantTitle !== "Default Title" && (
+                    <> ({editingVariant.variantTitle})</>
+                  )}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <ScrollArea className="max-h-[50vh] pr-4">
+            <div className="space-y-4">
+              {componentDraft.map((component, index) => (
+                <Card key={index}>
+                  <CardContent className="pt-6">
+                    <div className="flex gap-4 items-start">
+                      <div className="flex-1 space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor={`erp-${index}`}>
+                            ERP Product (FINAL)
+                          </Label>
+                          <Select
+                            value={component.erpVariantId}
+                            onValueChange={(value) =>
+                              updateComponent(index, "erpVariantId", value)
+                            }
+                          >
+                            <SelectTrigger id={`erp-${index}`}>
+                              <SelectValue placeholder="Select ERP product..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {erpVariants.map((erpVariant) => (
+                                <SelectItem
+                                  key={
+                                    erpVariant.variantId || erpVariant.productId
+                                  }
+                                  value={
+                                    erpVariant.variantId || erpVariant.productId
+                                  }
+                                >
+                                  <div className="flex flex-col">
+                                    <span>
+                                      {erpVariant.variantDisplay ||
+                                        erpVariant.productName}
+                                    </span>
+                                    {erpVariant.variantSku && (
+                                      <span className="text-xs text-muted-foreground">
+                                        SKU: {erpVariant.variantSku}
+                                      </span>
+                                    )}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor={`qty-${index}`}>
+                            Quantity per item sold
+                          </Label>
+                          <Input
+                            id={`qty-${index}`}
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={component.quantity}
+                            onChange={(e) =>
+                              updateComponent(
+                                index,
+                                "quantity",
+                                parseFloat(e.target.value) || 1
+                              )
+                            }
+                            className="w-32"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            How many of this component per Shopify item
+                          </p>
+                        </div>
+                      </div>
+
+                      {componentDraft.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeComponent(index)}
+                          className="mt-8"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={addComponent}
+                className="w-full"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Component
+              </Button>
+            </div>
+          </ScrollArea>
+
+          <Separator />
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDialogOpen(false)
+                setEditingVariant(null)
+                setComponentDraft([])
+              }}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveMapping} disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>Save Mapping</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

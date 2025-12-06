@@ -154,16 +154,24 @@ export const variantBillOfMaterials = pgTable("variant_bill_of_materials", {
 // })
 
 // Shopify Integration Tables
-// Mapping table: Links ERP FINAL product variants to Shopify variants
+// Mapping table: Links Shopify variants to ERP product variants with quantities
+// Each row represents one component mapping
+// For simple products (grips): one row - Shopify variant → 1× Grip
+// For sets/bundles (ski poles): multiple rows - Shopify variant → 2× Grip, 2× Stick, 2× Basket, 2× Sling
 export const shopifyVariantMappings = pgTable("shopify_variant_mappings", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
+  // Shopify side
+  shopifyProductId: text("shopify_product_id").notNull(),
+  shopifyVariantId: text("shopify_variant_id").notNull(),
+  shopifyProductTitle: text("shopify_product_title"), // For display purposes
+  shopifyVariantTitle: text("shopify_variant_title"), // For display purposes
   // ERP side (only FINAL products)
   productVariantId: uuid("product_variant_id")
     .references(() => productVariants.id, { onDelete: "cascade" })
     .notNull(),
-  // Shopify side
-  shopifyProductId: text("shopify_product_id").notNull(),
-  shopifyVariantId: text("shopify_variant_id").notNull().unique(),
+  // Quantity of this component required per Shopify item sold
+  // Example: Selling 1 ski pole set requires 2 grips, 2 sticks, etc.
+  quantity: numeric("quantity", { precision: 18, scale: 2 }).notNull().default("1"),
   // Sync metadata
   syncStatus: text("sync_status").notNull().default("active"), // active, disabled, error
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
@@ -171,8 +179,9 @@ export const shopifyVariantMappings = pgTable("shopify_variant_mappings", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (table) => ({
-  // Index for fast lookups during order processing
-  productVariantIdx: unique("shopify_variant_mapping_product_variant_idx").on(
+  // Prevent duplicate components for same Shopify variant
+  shopifyVariantComponentUnique: unique("shopify_variant_component_unique").on(
+    table.shopifyVariantId,
     table.productVariantId
   ),
 }))

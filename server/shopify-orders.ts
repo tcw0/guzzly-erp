@@ -137,13 +137,19 @@ export async function processShopifyOrder(
       shopifyOrderNumber: order.shopifyOrderNumber,
     })
 
-    // 3. Map line items to ERP variants
+    // 3. Map line items to ERP components
+    // Each Shopify variant can map to MULTIPLE ERP components with quantities
+    // Example: 1x Ski Pole Set → 2x Grips, 2x Sticks, 2x Baskets, 2x Slings
     const mappingResults: {
       mapped: Array<{
         erpVariantId: string
         erpProductId: string
         quantity: number
+        componentQuantity: number // Quantity per Shopify item
+        totalQuantity: number // componentQuantity * lineItem.quantity
         lineItem: ShopifyLineItem
+        erpSku: string
+        erpProductName: string
       }>
       unmapped: Array<{
         lineItem: ShopifyLineItem
@@ -177,11 +183,12 @@ export async function processShopifyOrder(
         continue
       }
 
-      // Find mapping in our database
-      const [mapping] = await db
+      // Find ALL component mappings for this Shopify variant
+      const componentMappings = await db
         .select({
           mappingId: shopifyVariantMappings.id,
           erpVariantId: shopifyVariantMappings.productVariantId,
+          componentQuantity: shopifyVariantMappings.quantity,
           erpProductId: productVariants.productId,
           erpProductName: products.name,
           erpSku: productVariants.sku,
@@ -193,13 +200,17 @@ export async function processShopifyOrder(
           eq(shopifyVariantMappings.productVariantId, productVariants.id)
         )
         .leftJoin(products, eq(productVariants.productId, products.id))
-        .where(eq(shopifyVariantMappings.shopifyVariantId, shopifyVariantId))
-        .limit(1)
+        .where(
+          and(
+            eq(shopifyVariantMappings.shopifyVariantId, shopifyVariantId),
+            eq(shopifyVariantMappings.syncStatus, "active")
+          )
+        )
 
-      if (!mapping || !mapping.erpVariantId || !mapping.erpProductId) {
+      if (componentMappings.length === 0) {
         mappingResults.unmapped.push({
           lineItem,
-          reason: `No mapping found for Shopify variant ${shopifyVariantId} (SKU: ${lineItem.sku})`,
+          reason: `No active mappings found for Shopify variant ${shopifyVariantId} (SKU: ${lineItem.sku})`,
         })
 
         // Store unmapped line item for review
@@ -218,34 +229,55 @@ export async function processShopifyOrder(
         continue
       }
 
-      // Check if mapping is active
-      if (mapping.syncStatus !== "active") {
-        mappingResults.unmapped.push({
-          lineItem,
-          reason: `Mapping disabled for variant ${shopifyVariantId}`,
+      console.log(
+        `[Order ${shopifyOrderId}] Found ${componentMappings.length} component(s) for variant ${shopifyVariantId}`
+      )
+
+      // Process each component mapping
+      for (const mapping of componentMappings) {
+        if (!mapping.erpVariantId || !mapping.erpProductId) {
+          console.warn(
+            `[Order ${shopifyOrderId}] Skipping invalid mapping ${mapping.mappingId}`
+          )
+          continue
+        }
+
+        const componentQty = Number(mapping.componentQuantity)
+        const totalQty = componentQty * lineItem.quantity
+
+        console.log(
+          `[Order ${shopifyOrderId}] Component: ${mapping.erpProductName} (${mapping.erpSku})`,
+          {
+            componentQty,
+            lineItemQty: lineItem.quantity,
+            totalQty,
+          }
+        )
+
+        // Store mapped line item (one record per component)
+        await db.insert(shopifyOrderItems).values({
+          orderId: order.id,
+          shopifyLineItemId: String(lineItem.id),
+          shopifyProductId: String(lineItem.product_id || ""),
+          shopifyVariantId,
+          sku: lineItem.sku || `variant-${shopifyVariantId}`,
+          productVariantId: mapping.erpVariantId,
+          quantity: String(totalQty), // Total quantity to deduct
+          price: lineItem.price,
+          mappingStatus: "mapped",
         })
-        continue
+
+        mappingResults.mapped.push({
+          erpVariantId: mapping.erpVariantId,
+          erpProductId: mapping.erpProductId,
+          quantity: lineItem.quantity,
+          componentQuantity: componentQty,
+          totalQuantity: totalQty,
+          lineItem,
+          erpSku: mapping.erpSku || "",
+          erpProductName: mapping.erpProductName || "",
+        })
       }
-
-      // Store mapped line item
-      await db.insert(shopifyOrderItems).values({
-        orderId: order.id,
-        shopifyLineItemId: String(lineItem.id),
-        shopifyProductId: String(lineItem.product_id || ""),
-        shopifyVariantId,
-        sku: lineItem.sku || `variant-${shopifyVariantId}`,
-        productVariantId: mapping.erpVariantId,
-        quantity: String(lineItem.quantity),
-        price: lineItem.price,
-        mappingStatus: "mapped",
-      })
-
-      mappingResults.mapped.push({
-        erpVariantId: mapping.erpVariantId,
-        erpProductId: mapping.erpProductId,
-        quantity: lineItem.quantity,
-        lineItem,
-      })
     }
 
     // 4. Handle unmapped items
@@ -262,7 +294,7 @@ export async function processShopifyOrder(
       console.warn(`Order ${shopifyOrderId} has unmapped items:`, errorMessage)
     }
 
-    // 5. Check inventory availability for mapped items
+    // 5. Check inventory availability for all components
     const inventoryChecks = await Promise.all(
       mappingResults.mapped.map(async (item) => {
         const [inventoryRecord] = await db
@@ -278,7 +310,7 @@ export async function processShopifyOrder(
         return {
           ...item,
           quantityOnHand,
-          insufficient: quantityOnHand < item.quantity,
+          insufficient: quantityOnHand < item.totalQuantity,
         }
       })
     )
@@ -289,7 +321,7 @@ export async function processShopifyOrder(
       const stockWarning = `Insufficient stock: ${insufficientStock
         .map(
           (item) =>
-            `${item.lineItem.title} (need ${item.quantity}, have ${item.quantityOnHand})`
+            `${item.erpProductName} (${item.erpSku}) - need ${item.totalQuantity}, have ${item.quantityOnHand}`
         )
         .join("; ")}`
 
@@ -305,19 +337,44 @@ export async function processShopifyOrder(
       console.warn(`Order ${shopifyOrderId} has insufficient stock:`, stockWarning)
     }
 
-    // 6. Deduct inventory for mapped items (sales fulfillment)
+    // 6. Deduct inventory for all component mappings (sales fulfillment)
     if (mappingResults.mapped.length > 0) {
       console.log(
-        `[Order ${shopifyOrderId}] Deducting inventory for ${mappingResults.mapped.length} items`
+        `[Order ${shopifyOrderId}] Deducting inventory for ${mappingResults.mapped.length} component(s)`
       )
 
-      // Deduct inventory for each sold item
+      // Deduct inventory for each component
+      // Aggregate components to avoid multiple updates to same variant
+      const componentAggregation = new Map<
+        string,
+        { productId: string; totalQty: number; name: string; sku: string }
+      >()
+
       for (const item of mappingResults.mapped) {
+        const existing = componentAggregation.get(item.erpVariantId)
+        if (existing) {
+          existing.totalQty += item.totalQuantity
+        } else {
+          componentAggregation.set(item.erpVariantId, {
+            productId: item.erpProductId,
+            totalQty: item.totalQuantity,
+            name: item.erpProductName,
+            sku: item.erpSku,
+          })
+        }
+      }
+
+      console.log(
+        `[Order ${shopifyOrderId}] Aggregated into ${componentAggregation.size} unique component(s)`
+      )
+
+      // Deduct inventory for each unique component
+      for (const [variantId, component] of componentAggregation.entries()) {
         // Create inventory movement record (negative quantity for sale)
         await db.insert(inventoryMovements).values({
-          productId: item.erpProductId,
-          variantId: item.erpVariantId,
-          quantity: (-item.quantity).toString(),
+          productId: component.productId,
+          variantId: variantId,
+          quantity: (-component.totalQty).toString(),
           action: inventoryActionEnum.enum.ADJUSTMENT, // Using ADJUSTMENT for sales
         })
 
@@ -325,19 +382,19 @@ export async function processShopifyOrder(
         const [updatedInventory] = await db
           .update(inventory)
           .set({
-            quantityOnHand: sql`${inventory.quantityOnHand} - ${item.quantity}`,
+            quantityOnHand: sql`${inventory.quantityOnHand} - ${component.totalQty}`,
           })
-          .where(eq(inventory.variantId, item.erpVariantId))
+          .where(eq(inventory.variantId, variantId))
           .returning({ newQuantity: inventory.quantityOnHand })
 
         console.log(
-          `[Order ${shopifyOrderId}] Updated inventory for variant ${item.erpVariantId}: ${updatedInventory.newQuantity}`
+          `[Order ${shopifyOrderId}] Deducted ${component.totalQty}x ${component.name} (${component.sku}): ${updatedInventory.newQuantity} remaining`
         )
 
         // Check if inventory went negative (shouldn't happen due to earlier check)
         if (parseFloat(updatedInventory.newQuantity.toString()) < 0) {
           console.warn(
-            `[Order ${shopifyOrderId}] ⚠️  Negative inventory for variant ${item.erpVariantId}: ${updatedInventory.newQuantity}`
+            `[Order ${shopifyOrderId}] ⚠️  Negative inventory for ${component.name} (${component.sku}): ${updatedInventory.newQuantity}`
           )
         }
       }
