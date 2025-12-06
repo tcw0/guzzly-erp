@@ -68,24 +68,35 @@ export async function POST(request: NextRequest) {
       throw new Error("Invalid webhook payload structure")
     }
 
-    // 6. Process order asynchronously (don't await - respond quickly to Shopify)
-    // We respond within 5 seconds, then process in background
-    processShopifyOrder(payload, webhookLogId).catch((error: Error) => {
+    // 6. Process order synchronously (must await in serverless environment)
+    // Vercel terminates functions after response, so we can't fire-and-forget
+    try {
+      await processShopifyOrder(payload, webhookLogId)
+      
+      // 7. Respond to Shopify after successful processing
+      return NextResponse.json({
+        success: true,
+        message: "Webhook processed successfully",
+        webhookLogId,
+      })
+    } catch (processingError) {
+      // Processing failed but webhook was received
       console.error("[Webhook] Order processing failed:", {
         orderId: payload.id,
         webhookLogId,
-        error: error.message,
-        stack: error.stack,
+        error: processingError instanceof Error ? processingError.message : "Unknown error",
+        stack: processingError instanceof Error ? processingError.stack : undefined,
       })
-      // Error is already logged to database in processShopifyOrder
-    })
-
-    // 7. Respond quickly to Shopify (< 5 seconds requirement)
-    return NextResponse.json({
-      success: true,
-      message: "Webhook received and queued for processing",
-      webhookLogId,
-    })
+      
+      // Still return success to Shopify (we received the webhook)
+      // The error is logged to database in processShopifyOrder
+      return NextResponse.json({
+        success: true,
+        message: "Webhook received but processing failed",
+        webhookLogId,
+        error: processingError instanceof Error ? processingError.message : "Unknown error",
+      })
+    }
   } catch (error) {
     console.error("Webhook handler error:", error)
 
