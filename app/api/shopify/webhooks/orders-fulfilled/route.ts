@@ -3,11 +3,12 @@ import { verifyShopifyWebhook } from "@/lib/shopify"
 import { db } from "@/db/drizzle"
 import { shopifyWebhookLogs } from "@/db/schema"
 import { eq } from "drizzle-orm"
+import { processShopifyOrder } from "@/server/shopify-orders"
 
 /**
  * Webhook endpoint for Shopify orders/fulfilled
  * Called by Shopify when an order is marked as fulfilled
- * 
+ *
  * IMPORTANT: Must respond within 5 seconds or Shopify will retry
  */
 export async function POST(request: NextRequest) {
@@ -41,7 +42,9 @@ export async function POST(request: NextRequest) {
     const payload = JSON.parse(body)
     const shopifyOrderId = payload.id?.toString()
 
-    console.log(`Received webhook: ${topic} for order ${shopifyOrderId} from ${shopDomain}`)
+    console.log(
+      `Received webhook: ${topic} for order ${shopifyOrderId} from ${shopDomain}`
+    )
 
     // 4. Log webhook receipt immediately
     const [webhookLog] = await db
@@ -57,18 +60,24 @@ export async function POST(request: NextRequest) {
     webhookLogId = webhookLog.id
 
     // 5. Validate payload structure
-    if (!payload.id || !payload.line_items || !Array.isArray(payload.line_items)) {
+    if (
+      !payload.id ||
+      !payload.line_items ||
+      !Array.isArray(payload.line_items)
+    ) {
       throw new Error("Invalid webhook payload structure")
     }
 
-    // 6. Import and call order processing (async, non-blocking)
-    // We respond quickly to Shopify, then process in background
-    const { processShopifyOrder } = await import("@/server/shopify-orders")
-    
-    // Process order asynchronously (don't await)
+    // 6. Process order asynchronously (don't await - respond quickly to Shopify)
+    // We respond within 5 seconds, then process in background
     processShopifyOrder(payload, webhookLogId).catch((error: Error) => {
-      console.error("Order processing error:", error)
-      // Error handling is done within processShopifyOrder
+      console.error("[Webhook] Order processing failed:", {
+        orderId: payload.id,
+        webhookLogId,
+        error: error.message,
+        stack: error.stack,
+      })
+      // Error is already logged to database in processShopifyOrder
     })
 
     // 7. Respond quickly to Shopify (< 5 seconds requirement)
@@ -86,7 +95,8 @@ export async function POST(request: NextRequest) {
         .update(shopifyWebhookLogs)
         .set({
           status: "failed",
-          errorMessage: error instanceof Error ? error.message : "Unknown error",
+          errorMessage:
+            error instanceof Error ? error.message : "Unknown error",
           processedAt: new Date(),
         })
         .where(eq(shopifyWebhookLogs.id, webhookLogId))

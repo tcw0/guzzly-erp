@@ -9,9 +9,10 @@ import {
   productVariants,
   products,
   inventory,
+  inventoryMovements,
 } from "@/db/schema"
-import { createOutput } from "@/server/output"
-import { eq, and } from "drizzle-orm"
+import { inventoryActionEnum } from "@/constants/inventory-actions"
+import { eq, and, sql } from "drizzle-orm"
 
 // Shopify order payload types
 interface ShopifyLineItem {
@@ -28,7 +29,12 @@ interface ShopifyLineItem {
 interface ShopifyOrder {
   id: number
   order_number: number
-  email: string
+  email?: string | null
+  customer?: {
+    id: number
+    email?: string | null
+    [key: string]: any
+  }
   financial_status: string
   fulfillment_status: string
   total_price: string
@@ -54,7 +60,10 @@ export async function processShopifyOrder(
   try {
     const shopifyOrderId = String(payload.id)
 
-    console.log(`Processing order ${shopifyOrderId}...`)
+    console.log(`[Order ${shopifyOrderId}] Starting processing...`, {
+      lineItems: payload.line_items.length,
+      webhookLogId,
+    })
 
     // 1. Check if order already processed (idempotency)
     const [existingOrder] = await db
@@ -79,25 +88,54 @@ export async function processShopifyOrder(
     }
 
     // 2. Create or update order record
-    const [order] = await db
-      .insert(shopifyOrders)
-      .values({
-        shopifyOrderId,
-        shopifyOrderNumber: String(payload.order_number),
-        status: "fulfilled",
-        fulfilledAt: new Date(),
-        totalAmount: payload.total_price,
-        customerEmail: payload.email,
-        rawPayload: payload,
-      })
-      .onConflictDoUpdate({
-        target: shopifyOrders.shopifyOrderId,
-        set: {
+    const customerEmail = payload.email || payload.customer?.email || null
+    
+    console.log(`[Order ${shopifyOrderId}] Creating order record...`, {
+      orderNumber: payload.order_number,
+      customerEmail,
+      totalAmount: payload.total_price,
+    })
+    
+    let order
+    try {
+      const [insertedOrder] = await db
+        .insert(shopifyOrders)
+        .values({
+          shopifyOrderId,
+          shopifyOrderNumber: String(payload.order_number),
           status: "fulfilled",
           fulfilledAt: new Date(),
+          totalAmount: payload.total_price,
+          customerEmail,
+          rawPayload: payload,
+        })
+        .onConflictDoUpdate({
+          target: shopifyOrders.shopifyOrderId,
+          set: {
+            status: "fulfilled",
+            fulfilledAt: new Date(),
+          },
+        })
+        .returning()
+      order = insertedOrder
+    } catch (dbError) {
+      console.error(`[Order ${shopifyOrderId}] ❌ Database error creating order:`, {
+        error: dbError instanceof Error ? dbError.message : String(dbError),
+        stack: dbError instanceof Error ? dbError.stack : undefined,
+        payload: {
+          shopifyOrderId,
+          orderNumber: payload.order_number,
+          customerEmail,
+          totalAmount: payload.total_price,
         },
       })
-      .returning()
+      throw new Error(`Failed to create order in database: ${dbError instanceof Error ? dbError.message : String(dbError)}`)
+    }
+      
+    console.log(`[Order ${shopifyOrderId}] ✅ Order record created:`, {
+      orderId: order.id,
+      shopifyOrderNumber: order.shopifyOrderNumber,
+    })
 
     // 3. Map line items to ERP variants
     const mappingResults: {
@@ -116,11 +154,22 @@ export async function processShopifyOrder(
       unmapped: [],
     }
 
+    console.log(`[Order ${shopifyOrderId}] Processing ${payload.line_items.length} line items...`)
+    
     for (const lineItem of payload.line_items) {
       const shopifyVariantId = String(lineItem.variant_id)
+      
+      console.log(`[Order ${shopifyOrderId}] Line item:`, {
+        id: lineItem.id,
+        sku: lineItem.sku,
+        variantId: shopifyVariantId,
+        title: lineItem.title,
+        quantity: lineItem.quantity,
+      })
 
       // Skip if no variant ID
       if (!lineItem.variant_id) {
+        console.warn(`[Order ${shopifyOrderId}] Skipping line item - no variant_id`)
         mappingResults.unmapped.push({
           lineItem,
           reason: "No variant_id in Shopify order",
@@ -159,7 +208,7 @@ export async function processShopifyOrder(
           shopifyLineItemId: String(lineItem.id),
           shopifyProductId: String(lineItem.product_id || ""),
           shopifyVariantId,
-          sku: lineItem.sku,
+          sku: lineItem.sku || `variant-${shopifyVariantId}`,
           productVariantId: null,
           quantity: String(lineItem.quantity),
           price: lineItem.price,
@@ -184,7 +233,7 @@ export async function processShopifyOrder(
         shopifyLineItemId: String(lineItem.id),
         shopifyProductId: String(lineItem.product_id || ""),
         shopifyVariantId,
-        sku: lineItem.sku,
+        sku: lineItem.sku || `variant-${shopifyVariantId}`,
         productVariantId: mapping.erpVariantId,
         quantity: String(lineItem.quantity),
         price: lineItem.price,
@@ -256,19 +305,41 @@ export async function processShopifyOrder(
       console.warn(`Order ${shopifyOrderId} has insufficient stock:`, stockWarning)
     }
 
-    // 6. Create output transaction if we have any mapped items
+    // 6. Deduct inventory for mapped items (sales fulfillment)
     if (mappingResults.mapped.length > 0) {
-      const outputs = mappingResults.mapped.map((item) => ({
-        productId: item.erpProductId,
-        variantId: item.erpVariantId,
-        quantity: item.quantity,
-      }))
+      console.log(
+        `[Order ${shopifyOrderId}] Deducting inventory for ${mappingResults.mapped.length} items`
+      )
 
-      // Create output transaction (will update inventory)
-      const outputResult = await createOutput({ outputs })
+      // Deduct inventory for each sold item
+      for (const item of mappingResults.mapped) {
+        // Create inventory movement record (negative quantity for sale)
+        await db.insert(inventoryMovements).values({
+          productId: item.erpProductId,
+          variantId: item.erpVariantId,
+          quantity: (-item.quantity).toString(),
+          action: inventoryActionEnum.enum.ADJUSTMENT, // Using ADJUSTMENT for sales
+        })
 
-      if (!outputResult.success) {
-        throw new Error("Failed to create output transaction")
+        // Update inventory quantity
+        const [updatedInventory] = await db
+          .update(inventory)
+          .set({
+            quantityOnHand: sql`${inventory.quantityOnHand} - ${item.quantity}`,
+          })
+          .where(eq(inventory.variantId, item.erpVariantId))
+          .returning({ newQuantity: inventory.quantityOnHand })
+
+        console.log(
+          `[Order ${shopifyOrderId}] Updated inventory for variant ${item.erpVariantId}: ${updatedInventory.newQuantity}`
+        )
+
+        // Check if inventory went negative (shouldn't happen due to earlier check)
+        if (parseFloat(updatedInventory.newQuantity.toString()) < 0) {
+          console.warn(
+            `[Order ${shopifyOrderId}] ⚠️  Negative inventory for variant ${item.erpVariantId}: ${updatedInventory.newQuantity}`
+          )
+        }
       }
 
       // Mark order as processed
@@ -279,9 +350,11 @@ export async function processShopifyOrder(
         })
         .where(eq(shopifyOrders.id, order.id))
 
-      console.log(
-        `Order ${shopifyOrderId} processed successfully: ${mappingResults.mapped.length} items fulfilled`
-      )
+      console.log(`[Order ${shopifyOrderId}] ✅ Processed successfully`, {
+        mappedItems: mappingResults.mapped.length,
+        unmappedItems: mappingResults.unmapped.length,
+        orderId: order.id,
+      })
     } else {
       // No mapped items - update error message
       await db
@@ -315,7 +388,11 @@ export async function processShopifyOrder(
         mappingResults.unmapped.length > 0 || insufficientStock.length > 0,
     }
   } catch (error) {
-    console.error("Order processing error:", error)
+    console.error(`[Order Processing] ❌ Fatal error:`, {
+      webhookLogId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    })
 
     // Log error in webhook log
     await db

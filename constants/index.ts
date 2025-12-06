@@ -10,6 +10,7 @@ import {
   Package,
   Webhook,
   Settings,
+  Bug,
 } from "lucide-react"
 
 export const sidebarLinks = [
@@ -55,5 +56,10 @@ export const shopifySidebarLinks = [
     title: "Settings",
     url: "/shopify/settings",
     icon: Settings,
+  },
+  {
+    title: "Debug",
+    url: "/shopify/debug",
+    icon: Bug,
   },
 ]
