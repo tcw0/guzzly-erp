@@ -1,7 +1,9 @@
 import { config } from "dotenv"
 import { defineConfig } from "drizzle-kit"
 
-config({ path: ".env" })
+config({ path: ".env.local" })
+
+console.log("Drizzle migrations using DB:", process.env.DATABASE_URL)
 
 export default defineConfig({
   schema: "./db/schema.ts",
