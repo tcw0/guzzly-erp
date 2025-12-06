@@ -6,6 +6,7 @@ import {
   shopifyOrderItems,
   shopifyWebhookLogs,
   shopifyVariantMappings,
+  shopifyPropertyMappings,
   productVariants,
   products,
   inventory,
@@ -24,6 +25,10 @@ interface ShopifyLineItem {
   quantity: number
   price: string
   fulfillment_status: string | null
+  properties?: Array<{
+    name: string
+    value: string
+  }>
 }
 
 interface ShopifyOrder {
@@ -183,8 +188,8 @@ export async function processShopifyOrder(
         continue
       }
 
-      // Find ALL component mappings for this Shopify variant
-      const componentMappings = await db
+      // Strategy 1: Try variant-based mappings (fixed component sets)
+      let componentMappings = await db
         .select({
           mappingId: shopifyVariantMappings.id,
           erpVariantId: shopifyVariantMappings.productVariantId,
@@ -206,6 +211,65 @@ export async function processShopifyOrder(
             eq(shopifyVariantMappings.syncStatus, "active")
           )
         )
+
+      // Strategy 2: If no variant mappings, try property-based mappings (customizable products)
+      if (componentMappings.length === 0 && lineItem.properties && lineItem.properties.length > 0) {
+        console.log(
+          `[Order ${shopifyOrderId}] No variant mappings, checking property-based mappings...`
+        )
+
+        // Get all property mappings for this variant
+        const propertyMappings = await db
+          .select({
+            mappingId: shopifyPropertyMappings.id,
+            propertyRules: shopifyPropertyMappings.propertyRules,
+            erpVariantId: shopifyPropertyMappings.productVariantId,
+            componentQuantity: shopifyPropertyMappings.quantity,
+            componentType: shopifyPropertyMappings.componentType,
+            erpProductId: productVariants.productId,
+            erpProductName: products.name,
+            erpSku: productVariants.sku,
+          })
+          .from(shopifyPropertyMappings)
+          .leftJoin(
+            productVariants,
+            eq(shopifyPropertyMappings.productVariantId, productVariants.id)
+          )
+          .leftJoin(products, eq(productVariants.productId, products.id))
+          .where(
+            and(
+              eq(shopifyPropertyMappings.shopifyVariantId, shopifyVariantId),
+              eq(shopifyPropertyMappings.syncStatus, "active")
+            )
+          )
+
+        // Match properties to rules
+        for (const mapping of propertyMappings) {
+          const rules = mapping.propertyRules as Record<string, string>
+          const matchesAll = Object.entries(rules).every(([propName, propValue]) => {
+            const lineItemProp = lineItem.properties!.find(
+              (p) => p.name.toUpperCase() === propName.toUpperCase()
+            )
+            return lineItemProp && lineItemProp.value.toUpperCase() === propValue.toUpperCase()
+          })
+
+          if (matchesAll && mapping.erpVariantId && mapping.erpProductId) {
+            console.log(
+              `[Order ${shopifyOrderId}] Matched property rule:`,
+              { rules, componentType: mapping.componentType, erpVariantId: mapping.erpVariantId }
+            )
+            componentMappings.push({
+              mappingId: mapping.mappingId,
+              erpVariantId: mapping.erpVariantId,
+              componentQuantity: mapping.componentQuantity,
+              erpProductId: mapping.erpProductId,
+              erpProductName: mapping.erpProductName,
+              erpSku: mapping.erpSku,
+              syncStatus: "active",
+            })
+          }
+        }
+      }
 
       if (componentMappings.length === 0) {
         mappingResults.unmapped.push({

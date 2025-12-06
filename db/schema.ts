@@ -186,6 +186,36 @@ export const shopifyVariantMappings = pgTable("shopify_variant_mappings", {
   ),
 }))
 
+// Property-based mapping for customizable products
+// Maps Shopify line item properties to ERP variants
+// Example: GRIPS="TÜRKIS" → Grip Variant UUID, BASKET="POWDER BASKETS" + BASKETS="TÜRKIS" → Basket Variant UUID
+export const shopifyPropertyMappings = pgTable("shopify_property_mappings", {
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
+  // Shopify product/variant this mapping applies to
+  shopifyProductId: text("shopify_product_id").notNull(),
+  shopifyVariantId: text("shopify_variant_id").notNull(),
+  // Property matching rules (JSON for flexibility)
+  // Example: {"GRIPS": "TÜRKIS"} or {"BASKET": "POWDER BASKETS", "BASKETS": "TÜRKIS"}
+  propertyRules: jsonb("property_rules").notNull(),
+  // ERP variant to deduct
+  productVariantId: uuid("product_variant_id")
+    .references(() => productVariants.id, { onDelete: "cascade" })
+    .notNull(),
+  // Quantity per match (usually 1 or 2 for pairs)
+  quantity: numeric("quantity", { precision: 18, scale: 2 }).notNull().default("1"),
+  // Optional: Component type for grouping (GRIP, STICK, BASKET, SLING)
+  componentType: text("component_type"),
+  syncStatus: text("sync_status").notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  // Prevent duplicate rules for same variant
+  shopifyVariantRulesUnique: unique("shopify_variant_rules_unique").on(
+    table.shopifyVariantId,
+    table.propertyRules
+  ),
+}))
+
 // Track Shopify orders for reconciliation and audit
 export const shopifyOrders = pgTable("shopify_orders", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
@@ -246,6 +276,7 @@ export type ProductVariationOption = typeof productVariationOptions.$inferSelect
 export type ProductVariant = typeof productVariants.$inferSelect
 export type ProductVariantSelection = typeof productVariantSelections.$inferSelect
 export type ShopifyVariantMapping = typeof shopifyVariantMappings.$inferSelect
+export type ShopifyPropertyMapping = typeof shopifyPropertyMappings.$inferSelect
 export type ShopifyOrder = typeof shopifyOrders.$inferSelect
 export type ShopifyOrderItem = typeof shopifyOrderItems.$inferSelect
 export type ShopifyWebhookLog = typeof shopifyWebhookLogs.$inferSelect

@@ -8,6 +8,7 @@ import {
   productVariations,
   productVariationOptions,
   shopifyVariantMappings,
+  shopifyPropertyMappings,
 } from "@/db/schema"
 import { shopifyAdminAPI, shopifyRateLimiter } from "@/lib/shopify"
 import { eq, and, isNull } from "drizzle-orm"
@@ -334,6 +335,141 @@ export async function deleteVariantMapping(mappingId: string) {
     }
   } catch (error) {
     console.error("Error deleting variant mapping:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }
+  }
+}
+
+/**
+ * Create property-based mapping for customizable products
+ */
+export async function createPropertyMapping(data: {
+  shopifyProductId: string
+  shopifyVariantId: string
+  propertyRules: Record<string, string>
+  erpVariantId: string
+  quantity: number
+  componentType?: string
+}) {
+  try {
+    // Validate ERP variant exists and is FINAL type
+    const [erpVariant] = await db
+      .select({
+        id: productVariants.id,
+        productType: products.type,
+      })
+      .from(productVariants)
+      .leftJoin(products, eq(productVariants.productId, products.id))
+      .where(eq(productVariants.id, data.erpVariantId))
+      .limit(1)
+
+    if (!erpVariant) {
+      return {
+        success: false,
+        error: "ERP variant not found",
+      }
+    }
+
+    if (erpVariant.productType !== "FINAL") {
+      return {
+        success: false,
+        error: "Only FINAL products can be mapped to Shopify",
+      }
+    }
+
+    // Create property mapping
+    const [created] = await db
+      .insert(shopifyPropertyMappings)
+      .values({
+        shopifyProductId: data.shopifyProductId,
+        shopifyVariantId: data.shopifyVariantId,
+        propertyRules: data.propertyRules,
+        productVariantId: data.erpVariantId,
+        quantity: data.quantity.toString(),
+        componentType: data.componentType || null,
+        syncStatus: "active",
+      })
+      .returning()
+
+    return {
+      success: true,
+      mapping: created,
+      message: "Property mapping created successfully",
+    }
+  } catch (error) {
+    console.error("Error creating property mapping:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }
+  }
+}
+
+/**
+ * Get all property mappings for a Shopify variant
+ */
+export async function getPropertyMappings(shopifyVariantId?: string) {
+  try {
+    const query = db
+      .select({
+        id: shopifyPropertyMappings.id,
+        shopifyProductId: shopifyPropertyMappings.shopifyProductId,
+        shopifyVariantId: shopifyPropertyMappings.shopifyVariantId,
+        propertyRules: shopifyPropertyMappings.propertyRules,
+        productVariantId: shopifyPropertyMappings.productVariantId,
+        quantity: shopifyPropertyMappings.quantity,
+        componentType: shopifyPropertyMappings.componentType,
+        syncStatus: shopifyPropertyMappings.syncStatus,
+        createdAt: shopifyPropertyMappings.createdAt,
+        erpProductName: products.name,
+        erpVariantSku: productVariants.sku,
+      })
+      .from(shopifyPropertyMappings)
+      .leftJoin(
+        productVariants,
+        eq(shopifyPropertyMappings.productVariantId, productVariants.id)
+      )
+      .leftJoin(products, eq(productVariants.productId, products.id))
+
+    const mappings = shopifyVariantId
+      ? await query.where(
+          eq(shopifyPropertyMappings.shopifyVariantId, shopifyVariantId)
+        )
+      : await query
+
+    return {
+      success: true,
+      mappings,
+      totalCount: mappings.length,
+    }
+  } catch (error) {
+    console.error("Error fetching property mappings:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+      mappings: [],
+      totalCount: 0,
+    }
+  }
+}
+
+/**
+ * Delete a property mapping
+ */
+export async function deletePropertyMapping(mappingId: string) {
+  try {
+    await db
+      .delete(shopifyPropertyMappings)
+      .where(eq(shopifyPropertyMappings.id, mappingId))
+
+    return {
+      success: true,
+      message: "Property mapping deleted successfully",
+    }
+  } catch (error) {
+    console.error("Error deleting property mapping:", error)
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
