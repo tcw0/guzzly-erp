@@ -21,6 +21,10 @@ import { Boxes } from "lucide-react"
 import { getProducts } from "@/server/product"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
+// Disable caching for this page since product data changes frequently
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 async function Create() {
   const { data: products } = await getProducts()
 
