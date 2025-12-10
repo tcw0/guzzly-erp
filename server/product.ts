@@ -88,36 +88,28 @@ function generateCombinations<T>(arrays: T[][]): T[][] {
   return result
 }
 
-// Helper function to generate SKU from product name
-// SKU Format: PRODUCTCODE-OPTION1-OPTION2-PRODUCTID
-// Example: BASK-RED-LRG-A3F2E1
-// - PRODUCTCODE: First 3-4 letters of product name (e.g., BASK for "Basket")
-// - OPTION1, OPTION2: Variation options (e.g., RED, LRG)
-// - PRODUCTID: First 6 chars of product UUID for guaranteed uniqueness
-function generateProductCode(productName: string): string {
-  // Take first 3-4 uppercase letters, remove spaces and special characters
-  const cleaned = productName
+// Normalize a string for SKU segments: uppercase, trim, replace non-alphanumerics with hyphens,
+// collapse multiple hyphens, and trim leading/trailing hyphens.
+function normalizeSegment(value: string): string {
+  return value
     .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .substring(0, 4)
-
-  // If too short, pad with product name characters
-  if (cleaned.length < 3) {
-    return (
-      productName.toUpperCase().replace(/[^A-Z0-9]/g, "") + "000"
-    ).substring(0, 4)
-  }
-
-  return cleaned
+    .trim()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
 }
 
-// Helper function to generate option code from option value
-function generateOptionCode(optionValue: string): string {
-  // Take first 2-3 uppercase letters, remove spaces and special characters
-  return optionValue
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .substring(0, 3)
+// Helper to build product part for SKU (full normalized name)
+function buildProductPart(productName: string): string {
+  return normalizeSegment(productName) || "PRODUCT"
+}
+
+// Helper to build options part for SKU (full normalized option names, hyphen-joined)
+function buildOptionsPart(optionValues: string[]): string {
+  if (!optionValues.length) return "DEFAULT"
+  const normalized = optionValues
+    .map((opt) => normalizeSegment(opt))
+    .filter(Boolean)
+  return normalized.length ? normalized.join("-") : "DEFAULT"
 }
 
 export const createProduct = async (params: ProductParams) => {
@@ -184,9 +176,6 @@ export const createProduct = async (params: ProductParams) => {
         // Generate all combinations
         const combinations = generateCombinations(variationOptionArrays)
 
-        // Generate product code for SKU prefix
-        const productCode = generateProductCode(productData.name)
-
         // Generate short unique ID from product UUID (first 6 chars)
         const shortProductId = product.id
           .split("-")[0]
@@ -195,9 +184,9 @@ export const createProduct = async (params: ProductParams) => {
 
         // Create variants for each combination with SKU
         const variantsToInsert = combinations.map((combo) => {
-          // Build SKU: PRODUCT-OPTION1-OPTION2-PRODUCTID
-          // Ensure option codes are in the same order as variations
-          const optionCodes = insertedVariations
+          // Build human-readable SKU parts separated by underscores
+          // product_part_option1-option2-_SHORTID
+          const optionValues = insertedVariations
             .map((variation) => {
               const comboItem = combo.find(
                 (c) => c.variationId === variation.id
@@ -206,18 +195,18 @@ export const createProduct = async (params: ProductParams) => {
               const option = insertedOptions.find(
                 (opt) => opt.id === comboItem.optionId
               )
-              return option ? generateOptionCode(option.value) : ""
+              return option ? option.value : ""
             })
             .filter(Boolean)
 
-          const sku =
-            optionCodes.length > 0
-              ? `${productCode}-${optionCodes.join("-")}-${shortProductId}`
-              : `${productCode}-DEFAULT-${shortProductId}`
+          const productPart = buildProductPart(productData.name)
+          const optionsPart = buildOptionsPart(optionValues)
+
+          const sku = `${productPart}_${optionsPart}_${shortProductId}`
 
           return {
             productId: product.id,
-            sku: sku,
+            sku,
             minimumStockLevel: minimumStockLevel.toString(),
           }
         })
@@ -271,7 +260,7 @@ export const createProduct = async (params: ProductParams) => {
         await tx.insert(inventory).values(inventoryEntries)
       } else {
         // No variations - create one default variant with SKU
-        const productCode = generateProductCode(productData.name)
+        const productPart = buildProductPart(productData.name)
 
         // Generate short unique ID from product UUID (first 6 chars)
         const shortProductId = product.id
@@ -279,11 +268,13 @@ export const createProduct = async (params: ProductParams) => {
           .substring(0, 6)
           .toUpperCase()
 
+        const sku = `${productPart}_DEFAULT_${shortProductId}`
+
         const [defaultVariant] = await tx
           .insert(productVariants)
           .values({
             productId: product.id,
-            sku: `${productCode}-DEFAULT-${shortProductId}`,
+            sku,
             minimumStockLevel: minimumStockLevel.toString(),
           })
           .returning()
