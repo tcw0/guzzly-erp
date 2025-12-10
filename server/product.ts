@@ -14,8 +14,10 @@ import { db } from "@/db/drizzle"
 import { OutputParams, ProductParams } from "@/lib/validation"
 import { sql, eq } from "drizzle-orm"
 import { inventoryActionEnum } from "@/constants/inventory-actions"
+import { unstable_noStore as noStore } from "next/cache"
 
 export const getProducts = async () => {
+  noStore() // Disable caching for this function
   try {
     const result = await db.select().from(products)
     return {
@@ -120,7 +122,12 @@ function generateOptionCode(optionValue: string): string {
 
 export const createProduct = async (params: ProductParams) => {
   try {
-    const { components, variations = [], minimumStockLevel, ...productData } = params
+    const {
+      components,
+      variations = [],
+      minimumStockLevel,
+      ...productData
+    } = params
 
     const newProduct = await db.transaction(async (tx) => {
       // Create the product
@@ -179,9 +186,12 @@ export const createProduct = async (params: ProductParams) => {
 
         // Generate product code for SKU prefix
         const productCode = generateProductCode(productData.name)
-        
+
         // Generate short unique ID from product UUID (first 6 chars)
-        const shortProductId = product.id.split('-')[0].substring(0, 6).toUpperCase()
+        const shortProductId = product.id
+          .split("-")[0]
+          .substring(0, 6)
+          .toUpperCase()
 
         // Create variants for each combination with SKU
         const variantsToInsert = combinations.map((combo) => {
@@ -213,15 +223,22 @@ export const createProduct = async (params: ProductParams) => {
         })
 
         // Check for SKU collisions before inserting (safety check)
-        const skusToCheck = variantsToInsert.map(v => v.sku)
+        const skusToCheck = variantsToInsert.map((v) => v.sku)
         const existingVariants = await tx
           .select({ sku: productVariants.sku })
           .from(productVariants)
-          .where(sql`${productVariants.sku} = ANY(ARRAY[${sql.join(skusToCheck.map(sku => sql`${sku}`), sql`, `)}])`)
-        
+          .where(
+            sql`${productVariants.sku} = ANY(ARRAY[${sql.join(
+              skusToCheck.map((sku) => sql`${sku}`),
+              sql`, `
+            )}])`
+          )
+
         if (existingVariants.length > 0) {
           throw new Error(
-            `SKU collision detected: ${existingVariants.map(v => v.sku).join(', ')}. This should not happen - please contact support.`
+            `SKU collision detected: ${existingVariants
+              .map((v) => v.sku)
+              .join(", ")}. This should not happen - please contact support.`
           )
         }
 
@@ -255,10 +272,13 @@ export const createProduct = async (params: ProductParams) => {
       } else {
         // No variations - create one default variant with SKU
         const productCode = generateProductCode(productData.name)
-        
+
         // Generate short unique ID from product UUID (first 6 chars)
-        const shortProductId = product.id.split('-')[0].substring(0, 6).toUpperCase()
-        
+        const shortProductId = product.id
+          .split("-")[0]
+          .substring(0, 6)
+          .toUpperCase()
+
         const [defaultVariant] = await tx
           .insert(productVariants)
           .values({
@@ -329,7 +349,9 @@ export const createProduct = async (params: ProductParams) => {
             .limit(1)
 
           if (!componentProduct[0]) {
-            throw new Error(`Component product ${component.componentId} not found`)
+            throw new Error(
+              `Component product ${component.componentId} not found`
+            )
           }
 
           const componentVariants = await tx
@@ -384,9 +406,18 @@ export const createProduct = async (params: ProductParams) => {
               productVariantSelectionsMap.get(productVariant.id) || []
 
             // Find matching component variant based on mapping rules
+            const componentHasMultipleVariants = componentVariants.length > 1
+            const componentHasSelections =
+              componentVariantSelectionsMap.size > 0
+            const requiresMappingRules =
+              componentHasMultipleVariants || componentHasSelections
+
             let matchingComponentVariant = componentVariants[0] // Default to first variant
 
-            if (component.variantMappingRules && component.variantMappingRules.length > 0) {
+            if (
+              component.variantMappingRules &&
+              component.variantMappingRules.length > 0
+            ) {
               // Use mapping rules to find matching component variant
               for (const componentVariant of componentVariants) {
                 const componentSelections =
@@ -403,20 +434,24 @@ export const createProduct = async (params: ProductParams) => {
                     const productSelection = productSelections.find(
                       (s) => s.variationName === rule.productVariationName
                     )
-                    
+
                     if (!productSelection) {
                       matches = false
                       break
                     }
-                    
+
                     if (
                       !componentSelection ||
-                      componentSelection.optionValue !== productSelection.optionValue
+                      componentSelection.optionValue !==
+                        productSelection.optionValue
                     ) {
                       matches = false
                       break
                     }
-                  } else if (rule.strategy === "default" && rule.defaultOptionValue) {
+                  } else if (
+                    rule.strategy === "default" &&
+                    rule.defaultOptionValue
+                  ) {
                     // Strategy: Use fixed default value
                     if (
                       !componentSelection ||
@@ -438,8 +473,11 @@ export const createProduct = async (params: ProductParams) => {
                   break
                 }
               }
+            } else if (!requiresMappingRules) {
+              // Single-variant component without variations can safely use the only variant
+              matchingComponentVariant = componentVariants[0]
             } else {
-              // No mapping rules provided - this should not happen for components with variations
+              // No mapping rules provided but component has variations/multiple variants
               throw new Error(
                 `Variant mapping rules are required for component ${component.componentId} which has variations`
               )
