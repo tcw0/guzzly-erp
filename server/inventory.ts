@@ -10,6 +10,7 @@ import {
   productVariationOptions,
 } from "@/db/schema"
 import { eq } from "drizzle-orm"
+import { unstable_noStore as noStore } from "next/cache"
 
 export type InventoryItem = {
   id: string
@@ -29,6 +30,7 @@ export type InventoryItem = {
 }
 
 export async function getInventory() {
+  noStore() // Disable caching for this function
   try {
     // Get all inventory entries with variants
     const inventoryRows = await db

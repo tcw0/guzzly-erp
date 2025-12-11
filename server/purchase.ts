@@ -11,6 +11,7 @@ import {
 import { PurchaseParams } from "@/lib/validation"
 import { inventoryActionEnum } from "@/constants/inventory-actions"
 import { productTypeEnum } from "@/constants/product-types"
+import { unstable_noStore as noStore } from "next/cache"
 
 export async function createPurchase(params: PurchaseParams) {
   try {
@@ -91,6 +92,7 @@ export async function createPurchase(params: PurchaseParams) {
 
 
 export async function getPurchases() {
+  noStore() // Disable caching for this function
   try {
     const result = await db
       .select({
