@@ -353,7 +353,6 @@ export async function createPropertyMapping(data: {
   components: Array<{
     erpVariantId: string
     quantity: number
-    componentType?: string
   }>
 }) {
   try {
@@ -413,7 +412,6 @@ export async function createPropertyMapping(data: {
           propertyRules: data.propertyRules,
           productVariantId: component.erpVariantId,
           quantity: component.quantity.toString(),
-          componentType: component.componentType || null,
           syncStatus: "active",
         })
         .returning()
@@ -448,7 +446,6 @@ export async function getPropertyMappings(shopifyVariantId?: string) {
         propertyRules: shopifyPropertyMappings.propertyRules,
         productVariantId: shopifyPropertyMappings.productVariantId,
         quantity: shopifyPropertyMappings.quantity,
-        componentType: shopifyPropertyMappings.componentType,
         syncStatus: shopifyPropertyMappings.syncStatus,
         createdAt: shopifyPropertyMappings.createdAt,
         erpProductName: products.name,

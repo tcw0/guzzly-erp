@@ -110,7 +110,6 @@ interface PropertyMapping {
   propertyRules: Record<string, string>
   productVariantId: string
   quantity: string
-  componentType: string | null
   syncStatus: string
   createdAt: string
   erpProductName: string | null
@@ -125,7 +124,6 @@ interface PropertyMappingGroup {
     id: string
     productVariantId: string
     quantity: string
-    componentType: string | null
     erpProductName: string | null
     erpVariantSku: string | null
   }>
@@ -163,8 +161,8 @@ export default function ShopifyMappingPage() {
     Array<{ key: string; value: string }>
   >([{ key: "", value: "" }])
   const [propertyComponentsDraft, setPropertyComponentsDraft] = useState<
-    Array<{ erpVariantId: string; quantity: number; componentType: string }>
-  >([{ erpVariantId: "", quantity: 1, componentType: "none" }])
+    Array<{ erpVariantId: string; quantity: number }>
+  >([{ erpVariantId: "", quantity: 1 }])
   const [propertySearchTerm, setPropertySearchTerm] = useState("")
 
   useEffect(() => {
@@ -325,7 +323,7 @@ export default function ShopifyMappingPage() {
   function openPropertyMappingDialog(shopifyVariant: ShopifyVariant) {
     setEditingPropertyVariant(shopifyVariant)
     setPropertyRulesDraft([{ key: "", value: "" }])
-    setPropertyComponentsDraft([{ erpVariantId: "", quantity: 1, componentType: "none" }])
+    setPropertyComponentsDraft([{ erpVariantId: "", quantity: 1 }])
     setPropertyDialogOpen(true)
   }
 
@@ -350,7 +348,7 @@ export default function ShopifyMappingPage() {
   }
 
   function addPropertyComponent() {
-    setPropertyComponentsDraft([...propertyComponentsDraft, { erpVariantId: "", quantity: 1, componentType: "none" }])
+    setPropertyComponentsDraft([...propertyComponentsDraft, { erpVariantId: "", quantity: 1 }])
   }
 
   function removePropertyComponent(index: number) {
@@ -359,7 +357,7 @@ export default function ShopifyMappingPage() {
 
   function updatePropertyComponent(
     index: number,
-    field: "erpVariantId" | "quantity" | "componentType",
+    field: "erpVariantId" | "quantity",
     value: string | number
   ) {
     const updated = [...propertyComponentsDraft]
@@ -405,7 +403,6 @@ export default function ShopifyMappingPage() {
         components: propertyComponentsDraft.map(c => ({
           erpVariantId: c.erpVariantId,
           quantity: c.quantity,
-          componentType: c.componentType === "none" ? undefined : c.componentType,
         })),
       })
 
@@ -858,7 +855,6 @@ export default function ShopifyMappingPage() {
                               acc[key].components.push({
                                 id: mapping.id,
                                 erpProductName: mapping.erpProductName,
-                                componentType: mapping.componentType,
                                 quantity: mapping.quantity,
                               })
                               return acc
@@ -919,14 +915,7 @@ export default function ShopifyMappingPage() {
                                                 <span className="font-medium">
                                                   {comp.erpProductName}
                                                 </span>
-                                                {comp.componentType && (
-                                                  <Badge
-                                                    variant="secondary"
-                                                    className="text-xs"
-                                                  >
-                                                    {comp.componentType}
-                                                  </Badge>
-                                                )}
+
                                                 <span className="text-muted-foreground">
                                                   ×{comp.quantity}
                                                 </span>
@@ -1147,7 +1136,7 @@ export default function ShopifyMappingPage() {
                                   </Select>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 gap-3">
                                   <div className="space-y-2">
                                     <Label htmlFor={`prop-qty-${index}`}>Quantity</Label>
                                     <Input
@@ -1167,29 +1156,6 @@ export default function ShopifyMappingPage() {
                                     <p className="text-xs text-muted-foreground">
                                       Usually 1 or 2 for pairs
                                     </p>
-                                  </div>
-
-                                  <div className="space-y-2">
-                                    <Label htmlFor={`prop-type-${index}`}>
-                                      Component Type
-                                    </Label>
-                                    <Select
-                                      value={component.componentType}
-                                      onValueChange={(value) =>
-                                        updatePropertyComponent(index, "componentType", value)
-                                      }
-                                    >
-                                      <SelectTrigger id={`prop-type-${index}`}>
-                                        <SelectValue placeholder="Select type..." />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="none">None</SelectItem>
-                                        <SelectItem value="GRIP">GRIP</SelectItem>
-                                        <SelectItem value="STICK">STICK</SelectItem>
-                                        <SelectItem value="BASKET">BASKET</SelectItem>
-                                        <SelectItem value="SLING">SLING</SelectItem>
-                                      </SelectContent>
-                                    </Select>
                                   </div>
                                 </div>
                               </div>

@@ -203,8 +203,6 @@ export const shopifyPropertyMappings = pgTable("shopify_property_mappings", {
     .notNull(),
   // Quantity per match (usually 1 or 2 for pairs)
   quantity: numeric("quantity", { precision: 18, scale: 2 }).notNull().default("1"),
-  // Optional: Component type for grouping (GRIP, STICK, BASKET, SLING)
-  componentType: text("component_type"),
   syncStatus: text("sync_status").notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),

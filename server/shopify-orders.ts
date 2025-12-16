@@ -225,7 +225,6 @@ export async function processShopifyOrder(
             propertyRules: shopifyPropertyMappings.propertyRules,
             erpVariantId: shopifyPropertyMappings.productVariantId,
             componentQuantity: shopifyPropertyMappings.quantity,
-            componentType: shopifyPropertyMappings.componentType,
             erpProductId: productVariants.productId,
             erpProductName: products.name,
             erpSku: productVariants.sku,
@@ -256,7 +255,7 @@ export async function processShopifyOrder(
           if (matchesAll && mapping.erpVariantId && mapping.erpProductId) {
             console.log(
               `[Order ${shopifyOrderId}] Matched property rule:`,
-              { rules, componentType: mapping.componentType, erpVariantId: mapping.erpVariantId }
+              { rules, erpVariantId: mapping.erpVariantId }
             )
             componentMappings.push({
               mappingId: mapping.mappingId,
