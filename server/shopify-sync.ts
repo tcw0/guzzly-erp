@@ -344,59 +344,87 @@ export async function deleteVariantMapping(mappingId: string) {
 
 /**
  * Create property-based mapping for customizable products
+ * Supports multiple ERP components per property rule set
  */
 export async function createPropertyMapping(data: {
   shopifyProductId: string
   shopifyVariantId: string
   propertyRules: Record<string, string>
-  erpVariantId: string
-  quantity: number
-  componentType?: string
+  components: Array<{
+    erpVariantId: string
+    quantity: number
+    componentType?: string
+  }>
 }) {
   try {
-    // Validate ERP variant exists and is FINAL type
-    const [erpVariant] = await db
-      .select({
-        id: productVariants.id,
-        productType: products.type,
-      })
-      .from(productVariants)
-      .leftJoin(products, eq(productVariants.productId, products.id))
-      .where(eq(productVariants.id, data.erpVariantId))
-      .limit(1)
-
-    if (!erpVariant) {
+    // Validate: at least one component
+    if (!data.components || data.components.length === 0) {
       return {
         success: false,
-        error: "ERP variant not found",
+        error: "At least one component is required",
       }
     }
 
-    if (erpVariant.productType !== "FINAL") {
-      return {
-        success: false,
-        error: "Only FINAL products can be mapped to Shopify",
-      }
-    }
+    // Delete existing property mappings with these rules for this Shopify variant
+    // This allows updating/replacing the component set
+    await db
+      .delete(shopifyPropertyMappings)
+      .where(
+        and(
+          eq(shopifyPropertyMappings.shopifyVariantId, data.shopifyVariantId),
+          eq(shopifyPropertyMappings.propertyRules, data.propertyRules)
+        )
+      )
 
-    // Create property mapping
-    const [created] = await db
-      .insert(shopifyPropertyMappings)
-      .values({
-        shopifyProductId: data.shopifyProductId,
-        shopifyVariantId: data.shopifyVariantId,
-        propertyRules: data.propertyRules,
-        productVariantId: data.erpVariantId,
-        quantity: data.quantity.toString(),
-        componentType: data.componentType || null,
-        syncStatus: "active",
-      })
-      .returning()
+    // Create new mappings for each component
+    const createdMappings = []
+    for (const component of data.components) {
+      // Validate each component variant
+      const [erpVariant] = await db
+        .select({
+          id: productVariants.id,
+          productType: products.type,
+        })
+        .from(productVariants)
+        .leftJoin(products, eq(productVariants.productId, products.id))
+        .where(eq(productVariants.id, component.erpVariantId))
+        .limit(1)
+
+      if (!erpVariant) {
+        return {
+          success: false,
+          error: `Component variant ${component.erpVariantId} not found`,
+        }
+      }
+
+      if (erpVariant.productType !== "FINAL") {
+        return {
+          success: false,
+          error: "Only FINAL products can be mapped to Shopify",
+        }
+      }
+
+      // Create mapping for this component
+      const [created] = await db
+        .insert(shopifyPropertyMappings)
+        .values({
+          shopifyProductId: data.shopifyProductId,
+          shopifyVariantId: data.shopifyVariantId,
+          propertyRules: data.propertyRules,
+          productVariantId: component.erpVariantId,
+          quantity: component.quantity.toString(),
+          componentType: component.componentType || null,
+          syncStatus: "active",
+        })
+        .returning()
+
+      createdMappings.push(created)
+    }
 
     return {
       success: true,
-      mapping: created,
-      message: "Property mapping created successfully",
+      mappings: createdMappings,
+      message: `Property mapping created successfully with ${createdMappings.length} component(s)`,
     }
   } catch (error) {
     console.error("Error creating property mapping:", error)

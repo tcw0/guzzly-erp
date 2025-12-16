@@ -209,10 +209,11 @@ export const shopifyPropertyMappings = pgTable("shopify_property_mappings", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (table) => ({
-  // Prevent duplicate rules for same variant
-  shopifyVariantRulesUnique: unique("shopify_variant_rules_unique").on(
+  // Prevent duplicate component mappings for same property rules
+  shopifyVariantRulesComponentUnique: unique("shopify_variant_rules_component_unique").on(
     table.shopifyVariantId,
-    table.propertyRules
+    table.propertyRules,
+    table.productVariantId
   ),
 }))
 

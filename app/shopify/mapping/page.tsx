@@ -117,6 +117,20 @@ interface PropertyMapping {
   erpVariantSku: string | null
 }
 
+interface PropertyMappingGroup {
+  shopifyVariantId: string
+  propertyRules: Record<string, string>
+  propertyRulesKey: string
+  components: Array<{
+    id: string
+    productVariantId: string
+    quantity: string
+    componentType: string | null
+    erpProductName: string | null
+    erpVariantSku: string | null
+  }>
+}
+
 export default function ShopifyMappingPage() {
   const [shopifyVariants, setShopifyVariants] = useState<ShopifyVariant[]>([])
   const [erpVariants, setERPVariants] = useState<ERPVariant[]>([])
@@ -148,9 +162,9 @@ export default function ShopifyMappingPage() {
   const [propertyRulesDraft, setPropertyRulesDraft] = useState<
     Array<{ key: string; value: string }>
   >([{ key: "", value: "" }])
-  const [propertyErpVariantId, setPropertyErpVariantId] = useState("")
-  const [propertyQuantity, setPropertyQuantity] = useState(1)
-  const [propertyComponentType, setPropertyComponentType] = useState("none")
+  const [propertyComponentsDraft, setPropertyComponentsDraft] = useState<
+    Array<{ erpVariantId: string; quantity: number; componentType: string }>
+  >([{ erpVariantId: "", quantity: 1, componentType: "none" }])
   const [propertySearchTerm, setPropertySearchTerm] = useState("")
 
   useEffect(() => {
@@ -311,9 +325,7 @@ export default function ShopifyMappingPage() {
   function openPropertyMappingDialog(shopifyVariant: ShopifyVariant) {
     setEditingPropertyVariant(shopifyVariant)
     setPropertyRulesDraft([{ key: "", value: "" }])
-    setPropertyErpVariantId("")
-    setPropertyQuantity(1)
-    setPropertyComponentType("none")
+    setPropertyComponentsDraft([{ erpVariantId: "", quantity: 1, componentType: "none" }])
     setPropertyDialogOpen(true)
   }
 
@@ -337,6 +349,24 @@ export default function ShopifyMappingPage() {
     setPropertyRulesDraft(updated)
   }
 
+  function addPropertyComponent() {
+    setPropertyComponentsDraft([...propertyComponentsDraft, { erpVariantId: "", quantity: 1, componentType: "none" }])
+  }
+
+  function removePropertyComponent(index: number) {
+    setPropertyComponentsDraft(propertyComponentsDraft.filter((_, i) => i !== index))
+  }
+
+  function updatePropertyComponent(
+    index: number,
+    field: "erpVariantId" | "quantity" | "componentType",
+    value: string | number
+  ) {
+    const updated = [...propertyComponentsDraft]
+    updated[index] = { ...updated[index], [field]: value }
+    setPropertyComponentsDraft(updated)
+  }
+
   async function handleSavePropertyMapping() {
     if (!editingPropertyVariant) return
 
@@ -347,15 +377,16 @@ export default function ShopifyMappingPage() {
       return
     }
 
-    // Validate: ERP variant selected
-    if (!propertyErpVariantId) {
-      toast.error("Please select an ERP product variant")
+    // Validate: all components must have ERP variant selected
+    const invalidComponents = propertyComponentsDraft.filter((c) => !c.erpVariantId)
+    if (invalidComponents.length > 0) {
+      toast.error("Please select an ERP product for all components")
       return
     }
 
-    // Validate: quantity > 0
-    if (propertyQuantity <= 0) {
-      toast.error("Quantity must be greater than 0")
+    // Validate: at least one component
+    if (propertyComponentsDraft.length === 0) {
+      toast.error("Please add at least one component")
       return
     }
 
@@ -371,10 +402,11 @@ export default function ShopifyMappingPage() {
         shopifyProductId: editingPropertyVariant.shopifyProductId,
         shopifyVariantId: editingPropertyVariant.shopifyVariantId,
         propertyRules,
-        erpVariantId: propertyErpVariantId,
-        quantity: propertyQuantity,
-        componentType:
-          propertyComponentType === "none" ? undefined : propertyComponentType,
+        components: propertyComponentsDraft.map(c => ({
+          erpVariantId: c.erpVariantId,
+          quantity: c.quantity,
+          componentType: c.componentType === "none" ? undefined : c.componentType,
+        })),
       })
 
       if (result.success) {
@@ -395,13 +427,23 @@ export default function ShopifyMappingPage() {
 
   async function handleDeletePropertyMapping(mappingId: string) {
     try {
-      const result = await deletePropertyMapping(mappingId)
-      if (result.success) {
-        toast.success(result.message)
-        await loadPropertyMappings()
-      } else {
-        toast.error(result.error || "Failed to delete property mapping")
-      }
+      // Get the mapping to find its property rules
+      const mapping = propertyMappings.find(m => m.id === mappingId)
+      if (!mapping) return
+
+      // Delete all mappings with the same property rules (entire group)
+      const sameMappings = propertyMappings.filter(
+        m => JSON.stringify(m.propertyRules) === JSON.stringify(mapping.propertyRules) &&
+             m.shopifyVariantId === mapping.shopifyVariantId
+      )
+
+      // Delete all of them
+      await Promise.all(
+        sameMappings.map(m => deletePropertyMapping(m.id))
+      )
+
+      toast.success("Property mapping group deleted successfully")
+      await loadPropertyMappings()
     } catch (error) {
       toast.error("An error occurred while deleting")
       console.error(error)
@@ -804,6 +846,26 @@ export default function ShopifyMappingPage() {
                                 m.shopifyVariantId === variant.shopifyVariantId
                             )
 
+                            // Group mappings by property rules
+                            const groupedMappings = variantMappings.reduce((acc, mapping) => {
+                              const key = JSON.stringify(mapping.propertyRules)
+                              if (!acc[key]) {
+                                acc[key] = {
+                                  propertyRules: mapping.propertyRules,
+                                  components: [],
+                                }
+                              }
+                              acc[key].components.push({
+                                id: mapping.id,
+                                erpProductName: mapping.erpProductName,
+                                componentType: mapping.componentType,
+                                quantity: mapping.quantity,
+                              })
+                              return acc
+                            }, {} as Record<string, any>)
+
+                            const mappingGroups = Object.values(groupedMappings)
+
                             return (
                               <TableRow key={variant.shopifyVariantId}>
                                 <TableCell>
@@ -825,54 +887,64 @@ export default function ShopifyMappingPage() {
                                   </code>
                                 </TableCell>
                                 <TableCell>
-                                  {variantMappings.length === 0 ? (
+                                  {mappingGroups.length === 0 ? (
                                     <Badge variant="secondary">
                                       No mappings
                                     </Badge>
                                   ) : (
-                                    <div className="space-y-1">
-                                      {variantMappings.map((mapping) => (
+                                    <div className="space-y-3">
+                                      {mappingGroups.map((group: any, groupIdx: number) => (
                                         <div
-                                          key={mapping.id}
-                                          className="flex items-center gap-2 text-xs"
+                                          key={groupIdx}
+                                          className="border rounded p-2 space-y-1"
                                         >
-                                          <Badge
-                                            variant="outline"
-                                            className="font-mono"
-                                          >
-                                            {JSON.stringify(
-                                              mapping.propertyRules
-                                            )}
-                                          </Badge>
-                                          <span className="text-muted-foreground">
-                                            →
-                                          </span>
-                                          <span className="font-medium">
-                                            {mapping.erpProductName}
-                                          </span>
-                                          {mapping.componentType && (
+                                          <div className="flex items-center gap-2 text-xs">
                                             <Badge
-                                              variant="secondary"
-                                              className="text-xs"
+                                              variant="outline"
+                                              className="font-mono"
                                             >
-                                              {mapping.componentType}
+                                              {JSON.stringify(group.propertyRules)}
                                             </Badge>
-                                          )}
-                                          <span className="text-muted-foreground">
-                                            ×{mapping.quantity}
-                                          </span>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6"
-                                            onClick={() =>
-                                              handleDeletePropertyMapping(
-                                                mapping.id
-                                              )
-                                            }
-                                          >
-                                            <Trash2 className="h-3 w-3" />
-                                          </Button>
+                                            <span className="text-muted-foreground">
+                                              → {group.components.length} component(s)
+                                            </span>
+                                          </div>
+                                          <div className="ml-4 space-y-1">
+                                            {group.components.map((comp: any) => (
+                                              <div
+                                                key={comp.id}
+                                                className="flex items-center gap-2 text-xs"
+                                              >
+                                                <Package className="h-3 w-3 text-muted-foreground" />
+                                                <span className="font-medium">
+                                                  {comp.erpProductName}
+                                                </span>
+                                                {comp.componentType && (
+                                                  <Badge
+                                                    variant="secondary"
+                                                    className="text-xs"
+                                                  >
+                                                    {comp.componentType}
+                                                  </Badge>
+                                                )}
+                                                <span className="text-muted-foreground">
+                                                  ×{comp.quantity}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                          <div className="flex justify-end">
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-6 w-6"
+                                              onClick={() =>
+                                                handleDeletePropertyMapping(group.components[0].id)
+                                              }
+                                            >
+                                              <Trash2 className="h-3 w-3" />
+                                            </Button>
+                                          </div>
                                         </div>
                                       ))}
                                     </div>
@@ -1011,87 +1083,132 @@ export default function ShopifyMappingPage() {
 
                   <Separator />
 
-                  {/* ERP Variant Selection */}
+                  {/* ERP Components Selection */}
                   <div className="space-y-3">
-                    <Label className="text-base font-semibold">
-                      ERP Component
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      Select which ERP variant to deduct when properties match
-                    </p>
-                    <Select
-                      value={propertyErpVariantId}
-                      onValueChange={setPropertyErpVariantId}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select ERP product variant..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <ScrollArea className="h-[300px]">
-                          {erpVariants
-                            .filter(
-                              (variant) =>
-                                variant.variantId || variant.productId
-                            )
-                            .map((variant) => (
-                              <SelectItem
-                                key={variant.variantId || variant.productId}
-                                value={variant.variantId || variant.productId}
-                              >
-                                {variant.variantDisplay &&
-                                  `${variant.variantDisplay}`}
-                                {variant.variantSku && (
-                                  <span className="text-muted-foreground ml-2">
-                                    ({variant.variantSku})
-                                  </span>
-                                )}
-                              </SelectItem>
-                            ))}
-                        </ScrollArea>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <Separator />
-
-                  {/* Quantity and Component Type */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Quantity</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={propertyQuantity}
-                        onChange={(e) =>
-                          setPropertyQuantity(parseInt(e.target.value) || 1)
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Usually 1 for single items, 2 for pairs
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Component Type (Optional)</Label>
-                      <Select
-                        value={propertyComponentType}
-                        onValueChange={setPropertyComponentType}
+                    <div className="flex items-center justify-between">
+                      <Label className="text-base font-semibold">
+                        ERP Components
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={addPropertyComponent}
                       >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select type..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          <SelectItem value="GRIP">GRIP</SelectItem>
-                          <SelectItem value="STICK">STICK</SelectItem>
-                          <SelectItem value="BASKET">BASKET</SelectItem>
-                          <SelectItem value="SLING">SLING</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        Helps organize mappings by component
-                      </p>
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Component
+                      </Button>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Select which ERP variants to deduct when properties match (can be multiple for sets)
+                    </p>
+
+                    <div className="space-y-3">
+                      {propertyComponentsDraft.map((component, index) => (
+                        <Card key={index}>
+                          <CardContent className="pt-4">
+                            <div className="flex gap-4 items-start">
+                              <div className="flex-1 space-y-3">
+                                <div className="space-y-2">
+                                  <Label htmlFor={`prop-erp-${index}`}>
+                                    ERP Product (FINAL)
+                                  </Label>
+                                  <Select
+                                    value={component.erpVariantId}
+                                    onValueChange={(value) =>
+                                      updatePropertyComponent(index, "erpVariantId", value)
+                                    }
+                                  >
+                                    <SelectTrigger id={`prop-erp-${index}`}>
+                                      <SelectValue placeholder="Select ERP product..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <ScrollArea className="h-[200px]">
+                                        {erpVariants
+                                          .filter(
+                                            (variant) =>
+                                              variant.variantId || variant.productId
+                                          )
+                                          .map((variant) => (
+                                            <SelectItem
+                                              key={variant.variantId || variant.productId}
+                                              value={variant.variantId || variant.productId}
+                                            >
+                                              {variant.variantDisplay && `${variant.variantDisplay}`}
+                                              {variant.variantSku && (
+                                                <span className="text-muted-foreground ml-2">
+                                                  ({variant.variantSku})
+                                                </span>
+                                              )}
+                                            </SelectItem>
+                                          ))}
+                                      </ScrollArea>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-2">
+                                    <Label htmlFor={`prop-qty-${index}`}>Quantity</Label>
+                                    <Input
+                                      id={`prop-qty-${index}`}
+                                      type="number"
+                                      min="1"
+                                      step="1"
+                                      value={component.quantity}
+                                      onChange={(e) =>
+                                        updatePropertyComponent(
+                                          index,
+                                          "quantity",
+                                          parseInt(e.target.value) || 1
+                                        )
+                                      }
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                      Usually 1 or 2 for pairs
+                                    </p>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <Label htmlFor={`prop-type-${index}`}>
+                                      Component Type
+                                    </Label>
+                                    <Select
+                                      value={component.componentType}
+                                      onValueChange={(value) =>
+                                        updatePropertyComponent(index, "componentType", value)
+                                      }
+                                    >
+                                      <SelectTrigger id={`prop-type-${index}`}>
+                                        <SelectValue placeholder="Select type..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="none">None</SelectItem>
+                                        <SelectItem value="GRIP">GRIP</SelectItem>
+                                        <SelectItem value="STICK">STICK</SelectItem>
+                                        <SelectItem value="BASKET">BASKET</SelectItem>
+                                        <SelectItem value="SLING">SLING</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {propertyComponentsDraft.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => removePropertyComponent(index)}
+                                  className="mt-8"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
                     </div>
                   </div>
                 </div>
