@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table"
 import { ChevronRight, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { formatNumber } from "@/lib/utils"
 
 type InventoryRow = {
   id: string
@@ -154,7 +155,6 @@ export function HierarchicalInventoryTable({
               <TableHead className="w-12"></TableHead>
               <TableHead>Name</TableHead>
               <TableHead>SKU</TableHead>
-              <TableHead>Unit</TableHead>
               <TableHead className="text-right">Min. Stock</TableHead>
               <TableHead className="text-right">Quantity on Hand</TableHead>
             </TableRow>
@@ -163,7 +163,7 @@ export function HierarchicalInventoryTable({
             {groupedData.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={5}
                   className="text-center text-muted-foreground"
                 >
                   No products found
@@ -209,23 +209,26 @@ export function HierarchicalInventoryTable({
                           {product.variationNames.length > 0 && (
                             <span className="text-xs text-muted-foreground">
                               {product.variationNames.join(", ")}
-                              {hasMultipleVariants && ` • ${product.variants.length} variants`}
+                              {hasMultipleVariants &&
+                                ` • ${product.variants.length} variants`}
                             </span>
                           )}
-                          {product.variationNames.length === 0 && hasMultipleVariants && (
-                            <span className="text-xs text-muted-foreground">
-                              {product.variants.length} variants
-                            </span>
-                          )}
+                          {product.variationNames.length === 0 &&
+                            hasMultipleVariants && (
+                              <span className="text-xs text-muted-foreground">
+                                {product.variants.length} variants
+                              </span>
+                            )}
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {hasMultipleVariants ? "Multiple" : product.variants[0]?.sku}
+                        {hasMultipleVariants
+                          ? "Multiple"
+                          : product.variants[0]?.sku}
                       </TableCell>
-                      <TableCell>{product.unit}</TableCell>
                       <TableCell className="text-right">—</TableCell>
                       <TableCell className="text-right">
-                        {product.totalQuantity}
+                        {formatNumber(product.totalQuantity)} {product.unit}
                       </TableCell>
                     </TableRow>
 
@@ -248,18 +251,11 @@ export function HierarchicalInventoryTable({
                             <TableCell className="text-xs font-mono text-muted-foreground">
                               {variant.sku}
                             </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {product.unit}
+                            <TableCell className="text-right">
+                              {formatNumber(variant.minimumStockLevel)} {product.unit}
                             </TableCell>
                             <TableCell className="text-right">
-                              {Number.parseInt(
-                                variant.minimumStockLevel
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {Number.parseInt(
-                                variant.quantityOnHand
-                              )}
+                              {formatNumber(variant.quantityOnHand)} {product.unit}
                             </TableCell>
                           </TableRow>
                         )

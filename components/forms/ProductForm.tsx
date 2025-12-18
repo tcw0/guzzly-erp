@@ -327,13 +327,13 @@ export default function ProductForm() {
               <FormControl>
                 <Input
                   type="number"
-                  step="1"
+                  step="any"
                   min="0"
                   placeholder="Minimum quantity before alert (e.g., 100)"
                   {...field}
                   onChange={(e) =>
                     field.onChange(
-                      e.target.value === "" ? 0 : parseInt(e.target.value)
+                      e.target.value === "" ? 0 : parseFloat(e.target.value)
                     )
                   }
                   className="book-form_input"
@@ -406,12 +406,12 @@ export default function ProductForm() {
                                 <FormControl>
                                   <Input
                                     type="number"
-                                    step="1"
+                                    step="any"
                                     placeholder="Quantity"
                                     className="book-form_input"
                                     {...field}
                                     onChange={(e) =>
-                                      field.onChange(parseInt(e.target.value) || 0)
+                                      field.onChange(parseFloat(e.target.value) || 0)
                                     }
                                   />
                                 </FormControl>

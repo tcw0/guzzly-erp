@@ -207,11 +207,11 @@ export default function OutputForm() {
                               <FormControl>
                                 <Input
                                   type="number"
-                                  step="1"
+                                  step="any"
                                   placeholder="Quantity"
                                   {...field}
                                   onChange={(e) =>
-                                    field.onChange(parseInt(e.target.value) || 0)
+                                    field.onChange(parseFloat(e.target.value) || 0)
                                   }
                                 />
                               </FormControl>

@@ -54,7 +54,7 @@ export const productVariants = pgTable("product_variants", {
     .references(() => products.id, { onDelete: "cascade" })
     .notNull(),
   sku: varchar("sku", { length: 255 }).notNull(), // Required unique SKU code
-  minimumStockLevel: numeric("minimum_stock_level", { precision: 18, scale: 0 })
+  minimumStockLevel: numeric("minimum_stock_level", { precision: 18, scale: 2 })
     .notNull()
     .default("0"), // Minimum quantity before alert is needed
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
@@ -96,7 +96,7 @@ export const inventoryMovements = pgTable("inventory_movements", {
     .references(() => productVariants.id, {
       onDelete: "set null",
     }),
-  quantity: numeric("quantity", { precision: 18, scale: 0 }).notNull(),
+  quantity: numeric("quantity", { precision: 18, scale: 2 }).notNull(),
   action: INVENTORY_ACTION_ENUM("action").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -112,7 +112,7 @@ export const inventory = pgTable(
         onDelete: "cascade",
       })
       .notNull(),
-    quantityOnHand: numeric("quantity_on_hand", { precision: 18, scale: 0 })
+    quantityOnHand: numeric("quantity_on_hand", { precision: 18, scale: 2 })
       .notNull()
       .default("0"),
   },
@@ -134,7 +134,7 @@ export const variantBillOfMaterials = pgTable("variant_bill_of_materials", {
     .notNull(),
   quantityRequired: numeric("quantity_required", {
     precision: 18,
-    scale: 0,
+    scale: 3,
   }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 })
@@ -250,7 +250,7 @@ export const shopifyOrderItems = pgTable("shopify_order_items", {
     () => productVariants.id,
     { onDelete: "set null" }
   ),
-  quantity: numeric("quantity", { precision: 18, scale: 0 }).notNull(),
+  quantity: numeric("quantity", { precision: 18, scale: 2 }).notNull(),
   price: numeric("price", { precision: 18, scale: 2 }),
   mappingStatus: text("mapping_status").notNull(), // mapped, unmapped, error
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
