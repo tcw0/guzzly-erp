@@ -7,6 +7,7 @@ import {
   shopifyWebhookLogs,
   shopifyVariantMappings,
   shopifyPropertyMappings,
+  shopifyOrderAnnotations,
   productVariants,
   products,
   inventory,
@@ -14,7 +15,7 @@ import {
 } from "@/db/schema"
 import { inventoryActionEnum } from "@/constants/inventory-actions"
 import { shopifyAdminAPI } from "@/lib/shopify"
-import { eq, and, sql } from "drizzle-orm"
+import { eq, and, sql, inArray } from "drizzle-orm"
 
 // Shopify order payload types
 interface ShopifyLineItem {
@@ -67,6 +68,7 @@ interface ShopifyOrderListItem {
   totalPrice: string
   currency: string
   customerEmail: string | null
+  displayCustomerName: string | null
   lineItems: Array<{
     id: string
     title: string
@@ -78,7 +80,7 @@ interface ShopifyOrderListItem {
 }
 
 /**
- * Fetch latest orders directly from Shopify
+ * Fetch latest orders directly from Shopify and enrich with manual annotations
  * Used by the admin UI to display current Shopify order status and picklists
  */
 export async function fetchShopifyOrdersLive(limit: number = 50) {
@@ -87,12 +89,30 @@ export async function fetchShopifyOrdersLive(limit: number = 50) {
       `/orders.json?status=any&limit=${limit}&order=created_at%20desc`
     )
 
-    console.log(response.orders[0])
+    const orderIds = response.orders.map((o) => String(o.id))
+
+    // Fetch all annotations for these orders
+    const annotations =
+      orderIds.length > 0
+        ? await db
+            .select()
+            .from(shopifyOrderAnnotations)
+            .where(inArray(shopifyOrderAnnotations.shopifyOrderId, orderIds))
+        : []
+
+    // Build map for quick lookup
+    const annotationMap = new Map(
+      annotations.map((a) => [a.shopifyOrderId, a])
+    )
 
     const orders: ShopifyOrderListItem[] = response.orders.map((order) => {
       const status = order.cancelled_at
         ? "cancelled"
         : order.fulfillment_status || "open"
+
+      const annotation = annotationMap.get(String(order.id))
+      const displayCustomerName =
+        annotation?.customerName || order.email || order.customer?.email || null
 
       return {
         id: String(order.id),
@@ -102,17 +122,22 @@ export async function fetchShopifyOrdersLive(limit: number = 50) {
         totalPrice: order.total_price,
         currency: order.currency || "USD",
         customerEmail: order.email || order.customer?.email || null,
-        lineItems: order.line_items.map((item) => ({
-          id: String(item.id),
-          title: item.title,
-          variantTitle: item.variant_title || "",
-          quantity: item.quantity,
-          sku: item.sku || "",
-          properties: (item.properties || []).filter(
-            (prop): prop is { name: string; value: string } =>
-              Boolean(prop?.name) && Boolean(prop?.value)
-          ),
-        })),
+        displayCustomerName,
+        lineItems: order.line_items.map((item) => {
+          let variantTitle = item.variant_title || ""
+
+          return {
+            id: String(item.id),
+            title: item.title,
+            variantTitle,
+            quantity: item.quantity,
+            sku: item.sku || "",
+            properties: (item.properties || []).filter(
+              (prop): prop is { name: string; value: string } =>
+                Boolean(prop?.name) && Boolean(prop?.value)
+            ),
+          }
+        }),
       }
     })
 
@@ -123,6 +148,70 @@ export async function fetchShopifyOrdersLive(limit: number = 50) {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
       orders: [] as ShopifyOrderListItem[],
+    }
+  }
+}
+
+/**
+ * Upsert order annotation (customer name, notes)
+ */
+export async function upsertOrderAnnotation(
+  shopifyOrderId: string,
+  customerName: string | null,
+  notes?: string | null
+) {
+  try {
+    const result = await db
+      .insert(shopifyOrderAnnotations)
+      .values({
+        shopifyOrderId,
+        customerName,
+        notes: notes || null,
+      })
+      .onConflictDoUpdate({
+        target: shopifyOrderAnnotations.shopifyOrderId,
+        set: {
+          customerName,
+          notes: notes || null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning()
+
+    return {
+      success: true,
+      annotation: result[0],
+    }
+  } catch (error) {
+    console.error("Error upserting order annotation:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }
+  }
+}
+
+/**
+ * Get annotation for a single order
+ */
+export async function getOrderAnnotation(shopifyOrderId: string) {
+  try {
+    const [annotation] = await db
+      .select()
+      .from(shopifyOrderAnnotations)
+      .where(eq(shopifyOrderAnnotations.shopifyOrderId, shopifyOrderId))
+      .limit(1)
+
+    return {
+      success: true,
+      annotation: annotation || null,
+    }
+  } catch (error) {
+    console.error("Error fetching order annotation:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+      annotation: null,
     }
   }
 }

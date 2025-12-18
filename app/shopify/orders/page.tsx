@@ -32,7 +32,10 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { toast } from "sonner"
-import { fetchShopifyOrdersLive } from "@/server/shopify-orders"
+import {
+  fetchShopifyOrdersLive,
+  upsertOrderAnnotation,
+} from "@/server/shopify-orders"
 import {
   Loader2,
   RefreshCw,
@@ -41,6 +44,9 @@ import {
   CheckCircle2,
   Clock,
   Search,
+  Edit2,
+  Save,
+  X,
 } from "lucide-react"
 
 interface ShopifyOrderLineItem {
@@ -60,6 +66,7 @@ interface ShopifyOrderItem {
   totalPrice: string
   currency: string
   customerEmail: string | null
+  displayCustomerName: string | null
   lineItems: ShopifyOrderLineItem[]
 }
 
@@ -94,6 +101,9 @@ export default function ShopifyOrdersPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set())
+  const [editingCustomerName, setEditingCustomerName] = useState<
+    Record<string, { value: string; saving: boolean }>
+  >({})
 
   useEffect(() => {
     loadOrders()
@@ -123,6 +133,63 @@ export default function ShopifyOrdersPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function saveCustomerName(orderId: string) {
+    const editing = editingCustomerName[orderId]
+    if (!editing) return
+
+    setEditingCustomerName((prev) => ({
+      ...prev,
+      [orderId]: { ...prev[orderId], saving: true },
+    }))
+
+    try {
+      const result = await upsertOrderAnnotation(orderId, editing.value)
+      if (result.success) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === orderId
+              ? { ...o, displayCustomerName: editing.value || null }
+              : o
+          )
+        )
+        setEditingCustomerName((prev) => {
+          const next = { ...prev }
+          delete next[orderId]
+          return next
+        })
+        toast.success("Customer name saved")
+      } else {
+        toast.error("Failed to save customer name")
+      }
+    } catch (error) {
+      toast.error("Error saving customer name")
+      console.error(error)
+    } finally {
+      setEditingCustomerName((prev) => ({
+        ...prev,
+        [orderId]: { ...prev[orderId], saving: false },
+      }))
+    }
+  }
+
+  function startEditingCustomerName(
+    orderId: string,
+    currentName: string | null
+  ) {
+    setEditingCustomerName((prev) => ({
+      ...prev,
+      [orderId]: { value: currentName || "", saving: false },
+    }))
+  }
+
+  function cancelEditingCustomerName(orderId: string) {
+    setEditingCustomerName((prev) => {
+      const next = { ...prev }
+      delete next[orderId]
+      return next
+    })
   }
 
   function setOrderExpanded(orderId: string, open: boolean) {
@@ -288,17 +355,21 @@ export default function ShopifyOrdersPage() {
                   >
                     <div className="border rounded-lg overflow-hidden">
                       <div className="bg-muted/50 p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
+                        <div className="flex items-center justify-between gap-4 flex-wrap">
+                          <div className="flex items-center gap-4 flex-1 min-w-0">
                             <CollapsibleTrigger asChild>
-                              <Button variant="ghost" size="sm">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="shrink-0"
+                              >
                                 <Package className="h-4 w-4 mr-2" />
                                 Order #{order.orderNumber}
                               </Button>
                             </CollapsibleTrigger>
                             <Badge
                               variant={statusBadgeVariant(order.status)}
-                              className="gap-1"
+                              className="gap-1 shrink-0"
                             >
                               {order.status === "fulfilled" && (
                                 <CheckCircle2 className="h-3 w-3" />
@@ -312,11 +383,79 @@ export default function ShopifyOrdersPage() {
                               {formatStatusLabel(order.status)}
                             </Badge>
                           </div>
-                          <div className="flex items-center gap-4 text-sm">
+                          <div className="flex items-center gap-3 text-sm flex-wrap justify-end">
+                            {editingCustomerName[order.id] ? (
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  value={editingCustomerName[order.id].value}
+                                  onChange={(e) =>
+                                    setEditingCustomerName((prev) => ({
+                                      ...prev,
+                                      [order.id]: {
+                                        ...prev[order.id],
+                                        value: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="Customer name"
+                                  className="h-8 w-40"
+                                  disabled={
+                                    editingCustomerName[order.id].saving
+                                  }
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={() => saveCustomerName(order.id)}
+                                  disabled={
+                                    editingCustomerName[order.id].saving
+                                  }
+                                  className="h-8"
+                                >
+                                  {editingCustomerName[order.id].saving ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Save className="h-3 w-3" />
+                                  )}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    cancelEditingCustomerName(order.id)
+                                  }
+                                  disabled={
+                                    editingCustomerName[order.id].saving
+                                  }
+                                  className="h-8"
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="text-muted-foreground">
+                                  {order.displayCustomerName ||
+                                    order.customerEmail ||
+                                    "No name"}
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    startEditingCustomerName(
+                                      order.id,
+                                      order.displayCustomerName
+                                    )
+                                  }
+                                  className="h-8 px-2"
+                                  title="Edit customer name"
+                                >
+                                  <Edit2 className="h-3 w-3" />
+                                </Button>
+                              </>
+                            )}
                             <div className="text-muted-foreground">
-                              {order.customerEmail || "No email"}
-                            </div>
-                            <div className="font-medium">
                               {order.totalPrice} {order.currency}
                             </div>
                             <div className="text-muted-foreground">
@@ -331,7 +470,9 @@ export default function ShopifyOrdersPage() {
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="text-right">Qty</TableHead>
+                                <TableHead className="text-right">
+                                  Qty
+                                </TableHead>
                                 <TableHead>Item</TableHead>
                                 <TableHead>Variant</TableHead>
                                 <TableHead>SKU</TableHead>
@@ -359,7 +500,9 @@ export default function ShopifyOrdersPage() {
                                     {item.properties.length > 0 ? (
                                       <div className="flex flex-col gap-1 text-sm text-muted-foreground">
                                         {item.properties.map((prop, index) => (
-                                          <span key={`${item.id}-prop-${index}`}>
+                                          <span
+                                            key={`${item.id}-prop-${index}`}
+                                          >
                                             {prop.name}: {prop.value}
                                           </span>
                                         ))}

@@ -268,6 +268,20 @@ export const shopifyWebhookLogs = pgTable("shopify_webhook_logs", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 })
 
+// Manual annotations for Shopify orders (customer name, notes, etc.)
+// Stored separately to avoid duplicating Shopify order data
+export const shopifyOrderAnnotations = pgTable(
+  "shopify_order_annotations",
+  {
+    id: uuid("id").notNull().primaryKey().defaultRandom(),
+    shopifyOrderId: text("shopify_order_id").notNull().unique(),
+    customerName: text("customer_name"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  }
+)
+
 export type Product = typeof products.$inferSelect
 export type VariantBillOfMaterials = typeof variantBillOfMaterials.$inferSelect
 export type ProductVariation = typeof productVariations.$inferSelect
@@ -279,4 +293,5 @@ export type ShopifyPropertyMapping = typeof shopifyPropertyMappings.$inferSelect
 export type ShopifyOrder = typeof shopifyOrders.$inferSelect
 export type ShopifyOrderItem = typeof shopifyOrderItems.$inferSelect
 export type ShopifyWebhookLog = typeof shopifyWebhookLogs.$inferSelect
+export type ShopifyOrderAnnotation = typeof shopifyOrderAnnotations.$inferSelect
 // export type ManufacturingStep = typeof manufacturingSteps.$inferSelect
