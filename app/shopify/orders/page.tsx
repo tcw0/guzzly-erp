@@ -154,6 +154,7 @@ export default function ShopifyOrdersPage() {
               : o
           )
         )
+        // Clear editing state on success
         setEditingCustomerName((prev) => {
           const next = { ...prev }
           delete next[orderId]
@@ -162,11 +163,16 @@ export default function ShopifyOrdersPage() {
         toast.success("Customer name saved")
       } else {
         toast.error("Failed to save customer name")
+        // Reset saving flag on error
+        setEditingCustomerName((prev) => ({
+          ...prev,
+          [orderId]: { ...prev[orderId], saving: false },
+        }))
       }
     } catch (error) {
       toast.error("Error saving customer name")
       console.error(error)
-    } finally {
+      // Reset saving flag on error
       setEditingCustomerName((prev) => ({
         ...prev,
         [orderId]: { ...prev[orderId], saving: false },
@@ -434,7 +440,13 @@ export default function ShopifyOrdersPage() {
                               </div>
                             ) : (
                               <>
-                                <div className="text-muted-foreground">
+                                <div
+                                  className={
+                                    order.displayCustomerName
+                                      ? "font-medium"
+                                      : "text-muted-foreground"
+                                  }
+                                >
                                   {order.displayCustomerName ||
                                     order.customerEmail ||
                                     "No name"}
