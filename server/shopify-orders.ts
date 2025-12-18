@@ -13,6 +13,7 @@ import {
   inventoryMovements,
 } from "@/db/schema"
 import { inventoryActionEnum } from "@/constants/inventory-actions"
+import { shopifyAdminAPI } from "@/lib/shopify"
 import { eq, and, sql } from "drizzle-orm"
 
 // Shopify order payload types
@@ -34,6 +35,7 @@ interface ShopifyLineItem {
 interface ShopifyOrder {
   id: number
   order_number: number
+  name?: string
   email?: string | null
   customer?: {
     id: number
@@ -43,6 +45,8 @@ interface ShopifyOrder {
   financial_status: string
   fulfillment_status: string
   total_price: string
+  currency?: string
+  cancelled_at?: string | null
   created_at: string
   updated_at: string
   line_items: ShopifyLineItem[]
@@ -52,6 +56,70 @@ interface ShopifyOrder {
     updated_at: string
     line_items: ShopifyLineItem[]
   }>
+}
+
+interface ShopifyOrderListItem {
+  id: string
+  orderNumber: string
+  status: string
+  createdAt: string
+  totalPrice: string
+  currency: string
+  customerEmail: string | null
+  lineItems: Array<{
+    id: string
+    title: string
+    quantity: number
+    sku: string
+    properties: Array<{ name: string; value: string }>
+  }>
+}
+
+/**
+ * Fetch latest orders directly from Shopify
+ * Used by the admin UI to display current Shopify order status and picklists
+ */
+export async function fetchShopifyOrdersLive(limit: number = 50) {
+  try {
+    const response = await shopifyAdminAPI<{ orders: ShopifyOrder[] }>(
+      `/orders.json?status=any&limit=${limit}&order=created_at%20desc`
+    )
+
+    const orders: ShopifyOrderListItem[] = response.orders.map((order) => {
+      const status = order.cancelled_at
+        ? "cancelled"
+        : order.fulfillment_status || "open"
+
+      return {
+        id: String(order.id),
+        orderNumber: String(order.order_number ?? order.name ?? order.id),
+        status,
+        createdAt: order.created_at,
+        totalPrice: order.total_price,
+        currency: order.currency || "USD",
+        customerEmail: order.email || order.customer?.email || null,
+        lineItems: order.line_items.map((item) => ({
+          id: String(item.id),
+          title: item.title,
+          quantity: item.quantity,
+          sku: item.sku || "",
+          properties: (item.properties || []).filter(
+            (prop): prop is { name: string; value: string } =>
+              Boolean(prop?.name) && Boolean(prop?.value)
+          ),
+        })),
+      }
+    })
+
+    return { success: true, orders }
+  } catch (error) {
+    console.error("Error fetching Shopify orders live:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+      orders: [] as ShopifyOrderListItem[],
+    }
+  }
 }
 
 /**
