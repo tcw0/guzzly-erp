@@ -23,6 +23,7 @@ interface ShopifyLineItem {
   variant_id: number | null
   sku: string
   title: string
+  variant_title: string
   quantity: number
   price: string
   fulfillment_status: string | null
@@ -69,6 +70,7 @@ interface ShopifyOrderListItem {
   lineItems: Array<{
     id: string
     title: string
+    variantTitle: string
     quantity: number
     sku: string
     properties: Array<{ name: string; value: string }>
@@ -84,6 +86,8 @@ export async function fetchShopifyOrdersLive(limit: number = 50) {
     const response = await shopifyAdminAPI<{ orders: ShopifyOrder[] }>(
       `/orders.json?status=any&limit=${limit}&order=created_at%20desc`
     )
+
+    console.log(response.orders[0])
 
     const orders: ShopifyOrderListItem[] = response.orders.map((order) => {
       const status = order.cancelled_at
@@ -101,6 +105,7 @@ export async function fetchShopifyOrdersLive(limit: number = 50) {
         lineItems: order.line_items.map((item) => ({
           id: String(item.id),
           title: item.title,
+          variantTitle: item.variant_title || "",
           quantity: item.quantity,
           sku: item.sku || "",
           properties: (item.properties || []).filter(
@@ -162,13 +167,13 @@ export async function processShopifyOrder(
 
     // 2. Create or update order record
     const customerEmail = payload.email || payload.customer?.email || null
-    
+
     console.log(`[Order ${shopifyOrderId}] Creating order record...`, {
       orderNumber: payload.order_number,
       customerEmail,
       totalAmount: payload.total_price,
     })
-    
+
     let order
     try {
       const [insertedOrder] = await db
@@ -192,19 +197,26 @@ export async function processShopifyOrder(
         .returning()
       order = insertedOrder
     } catch (dbError) {
-      console.error(`[Order ${shopifyOrderId}] ❌ Database error creating order:`, {
-        error: dbError instanceof Error ? dbError.message : String(dbError),
-        stack: dbError instanceof Error ? dbError.stack : undefined,
-        payload: {
-          shopifyOrderId,
-          orderNumber: payload.order_number,
-          customerEmail,
-          totalAmount: payload.total_price,
-        },
-      })
-      throw new Error(`Failed to create order in database: ${dbError instanceof Error ? dbError.message : String(dbError)}`)
+      console.error(
+        `[Order ${shopifyOrderId}] ❌ Database error creating order:`,
+        {
+          error: dbError instanceof Error ? dbError.message : String(dbError),
+          stack: dbError instanceof Error ? dbError.stack : undefined,
+          payload: {
+            shopifyOrderId,
+            orderNumber: payload.order_number,
+            customerEmail,
+            totalAmount: payload.total_price,
+          },
+        }
+      )
+      throw new Error(
+        `Failed to create order in database: ${
+          dbError instanceof Error ? dbError.message : String(dbError)
+        }`
+      )
     }
-      
+
     console.log(`[Order ${shopifyOrderId}] ✅ Order record created:`, {
       orderId: order.id,
       shopifyOrderNumber: order.shopifyOrderNumber,
@@ -233,11 +245,13 @@ export async function processShopifyOrder(
       unmapped: [],
     }
 
-    console.log(`[Order ${shopifyOrderId}] Processing ${payload.line_items.length} line items...`)
-    
+    console.log(
+      `[Order ${shopifyOrderId}] Processing ${payload.line_items.length} line items...`
+    )
+
     for (const lineItem of payload.line_items) {
       const shopifyVariantId = String(lineItem.variant_id)
-      
+
       console.log(`[Order ${shopifyOrderId}] Line item:`, {
         id: lineItem.id,
         sku: lineItem.sku,
@@ -248,7 +262,9 @@ export async function processShopifyOrder(
 
       // Skip if no variant ID
       if (!lineItem.variant_id) {
-        console.warn(`[Order ${shopifyOrderId}] Skipping line item - no variant_id`)
+        console.warn(
+          `[Order ${shopifyOrderId}] Skipping line item - no variant_id`
+        )
         mappingResults.unmapped.push({
           lineItem,
           reason: "No variant_id in Shopify order",
@@ -281,7 +297,11 @@ export async function processShopifyOrder(
         )
 
       // Strategy 2: If no variant mappings, try property-based mappings (customizable products)
-      if (componentMappings.length === 0 && lineItem.properties && lineItem.properties.length > 0) {
+      if (
+        componentMappings.length === 0 &&
+        lineItem.properties &&
+        lineItem.properties.length > 0
+      ) {
         console.log(
           `[Order ${shopifyOrderId}] No variant mappings, checking property-based mappings...`
         )
@@ -313,18 +333,23 @@ export async function processShopifyOrder(
         // Match properties to rules
         for (const mapping of propertyMappings) {
           const rules = mapping.propertyRules as Record<string, string>
-          const matchesAll = Object.entries(rules).every(([propName, propValue]) => {
-            const lineItemProp = lineItem.properties!.find(
-              (p) => p.name.toUpperCase() === propName.toUpperCase()
-            )
-            return lineItemProp && lineItemProp.value.toUpperCase() === propValue.toUpperCase()
-          })
+          const matchesAll = Object.entries(rules).every(
+            ([propName, propValue]) => {
+              const lineItemProp = lineItem.properties!.find(
+                (p) => p.name.toUpperCase() === propName.toUpperCase()
+              )
+              return (
+                lineItemProp &&
+                lineItemProp.value.toUpperCase() === propValue.toUpperCase()
+              )
+            }
+          )
 
           if (matchesAll && mapping.erpVariantId && mapping.erpProductId) {
-            console.log(
-              `[Order ${shopifyOrderId}] Matched property rule:`,
-              { rules, erpVariantId: mapping.erpVariantId }
-            )
+            console.log(`[Order ${shopifyOrderId}] Matched property rule:`, {
+              rules,
+              erpVariantId: mapping.erpVariantId,
+            })
             componentMappings.push({
               mappingId: mapping.mappingId,
               erpVariantId: mapping.erpVariantId,
@@ -446,7 +471,9 @@ export async function processShopifyOrder(
       })
     )
 
-    const insufficientStock = inventoryChecks.filter((check) => check.insufficient)
+    const insufficientStock = inventoryChecks.filter(
+      (check) => check.insufficient
+    )
 
     if (insufficientStock.length > 0) {
       const stockWarning = `Insufficient stock: ${insufficientStock
@@ -465,7 +492,10 @@ export async function processShopifyOrder(
         })
         .where(eq(shopifyOrders.id, order.id))
 
-      console.warn(`Order ${shopifyOrderId} has insufficient stock:`, stockWarning)
+      console.warn(
+        `Order ${shopifyOrderId} has insufficient stock:`,
+        stockWarning
+      )
     }
 
     // 6. Deduct inventory for all component mappings (sales fulfillment)
@@ -658,36 +688,37 @@ export async function getShopifyOrders() {
 
     // Get line items for all orders
     const orderIds = orders.map((o) => o.id)
-    const allLineItems = orderIds.length > 0
-      ? await db
-          .select({
-            orderId: shopifyOrderItems.orderId,
-            id: shopifyOrderItems.id,
-            shopifyLineItemId: shopifyOrderItems.shopifyLineItemId,
-            shopifyProductId: shopifyOrderItems.shopifyProductId,
-            shopifyVariantId: shopifyOrderItems.shopifyVariantId,
-            shopifySku: shopifyOrderItems.sku,
-            quantity: shopifyOrderItems.quantity,
-            price: shopifyOrderItems.price,
-            mappedToVariantId: shopifyOrderItems.productVariantId,
-            mappingStatus: shopifyOrderItems.mappingStatus,
-            // Get ERP product info
-            erpProductName: products.name,
-            erpSku: productVariants.sku,
-          })
-          .from(shopifyOrderItems)
-          .leftJoin(
-            productVariants,
-            eq(shopifyOrderItems.productVariantId, productVariants.id)
-          )
-          .leftJoin(products, eq(productVariants.productId, products.id))
-          .where(
-            eq(
-              shopifyOrderItems.orderId,
-              orderIds.length === 1 ? orderIds[0] : shopifyOrderItems.orderId
+    const allLineItems =
+      orderIds.length > 0
+        ? await db
+            .select({
+              orderId: shopifyOrderItems.orderId,
+              id: shopifyOrderItems.id,
+              shopifyLineItemId: shopifyOrderItems.shopifyLineItemId,
+              shopifyProductId: shopifyOrderItems.shopifyProductId,
+              shopifyVariantId: shopifyOrderItems.shopifyVariantId,
+              shopifySku: shopifyOrderItems.sku,
+              quantity: shopifyOrderItems.quantity,
+              price: shopifyOrderItems.price,
+              mappedToVariantId: shopifyOrderItems.productVariantId,
+              mappingStatus: shopifyOrderItems.mappingStatus,
+              // Get ERP product info
+              erpProductName: products.name,
+              erpSku: productVariants.sku,
+            })
+            .from(shopifyOrderItems)
+            .leftJoin(
+              productVariants,
+              eq(shopifyOrderItems.productVariantId, productVariants.id)
             )
-          )
-      : []
+            .leftJoin(products, eq(productVariants.productId, products.id))
+            .where(
+              eq(
+                shopifyOrderItems.orderId,
+                orderIds.length === 1 ? orderIds[0] : shopifyOrderItems.orderId
+              )
+            )
+        : []
 
     // Group line items by order
     const ordersWithItems = orders.map((order) => ({

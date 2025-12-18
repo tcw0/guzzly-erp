@@ -46,6 +46,7 @@ import {
 interface ShopifyOrderLineItem {
   id: string
   title: string
+  variantTitle: string
   quantity: number
   sku: string
   properties: Array<{ name: string; value: string }>
@@ -330,25 +331,29 @@ export default function ShopifyOrdersPage() {
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Item</TableHead>
-                                <TableHead>SKU</TableHead>
                                 <TableHead className="text-right">Qty</TableHead>
+                                <TableHead>Item</TableHead>
+                                <TableHead>Variant</TableHead>
+                                <TableHead>SKU</TableHead>
                                 <TableHead>Properties</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {order.lineItems.map((item) => (
                                 <TableRow key={item.id}>
+                                  <TableCell className="text-right font-medium">
+                                    {item.quantity}x
+                                  </TableCell>
                                   <TableCell>
                                     <div className="font-medium">
                                       {item.title}
                                     </div>
                                   </TableCell>
+                                  <TableCell className="text-sm text-muted-foreground">
+                                    {item.variantTitle || "-"}
+                                  </TableCell>
                                   <TableCell className="font-mono text-sm">
                                     {item.sku || "-"}
-                                  </TableCell>
-                                  <TableCell className="text-right font-medium">
-                                    {item.quantity}x
                                   </TableCell>
                                   <TableCell>
                                     {item.properties.length > 0 ? (
