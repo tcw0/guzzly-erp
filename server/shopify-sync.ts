@@ -31,6 +31,37 @@ interface ShopifyProduct {
 }
 
 /**
+ * Fetch all variants for a specific product (handles products with >100 variants)
+ */
+async function fetchProductVariants(
+  productId: number
+): Promise<ShopifyVariant[]> {
+  const allVariants: ShopifyVariant[] = []
+  let hasNextPage = true
+  let pageInfo: string | null = null
+
+  while (hasNextPage) {
+    await shopifyRateLimiter.wait()
+
+    const endpoint: string = pageInfo
+      ? `/products/${productId}/variants.json?limit=250&page_info=${pageInfo}`
+      : `/products/${productId}/variants.json?limit=250`
+
+    const response = await shopifyAdminAPI<{ variants: ShopifyVariant[] }>(
+      endpoint
+    )
+
+    allVariants.push(...response.variants)
+
+    // Check for next page
+    hasNextPage = response.variants.length === 250
+    pageInfo = hasNextPage ? String(allVariants.length) : null
+  }
+
+  return allVariants
+}
+
+/**
  * Fetch all products from Shopify Admin API
  * Returns simplified structure for mapping UI
  */
@@ -59,23 +90,58 @@ export async function fetchShopifyProducts() {
       pageInfo = hasNextPage ? String(allProducts.length) : null
     }
 
-    // Transform for UI consumption
-    const shopifyVariants = allProducts.flatMap((product) =>
-      product.variants.map((variant) => ({
-        shopifyProductId: String(product.id),
-        shopifyVariantId: String(variant.id),
-        productTitle: product.title,
-        variantTitle: variant.title,
-        shopifySku: variant.sku || "",
-        price: variant.price,
-        inventoryQuantity: variant.inventory_quantity,
-      }))
-    )
+    // For products with 100 variants (API limit), fetch all variants separately
+    // This ensures we get ALL variants for products with >100 variants
+    const allVariants: Array<{
+      shopifyProductId: string
+      shopifyVariantId: string
+      productTitle: string
+      variantTitle: string
+      shopifySku: string
+      price: string
+      inventoryQuantity: number
+    }> = []
+
+    for (const product of allProducts) {
+      // If product has exactly 100 variants, it might have more (API limit)
+      // Fetch variants separately to be sure
+      if (product.variants.length === 100) {
+        console.log(
+          `Product "${product.title}" has 100+ variants, fetching all...`
+        )
+        const completeVariants = await fetchProductVariants(product.id)
+
+        allVariants.push(
+          ...completeVariants.map((variant) => ({
+            shopifyProductId: String(product.id),
+            shopifyVariantId: String(variant.id),
+            productTitle: product.title,
+            variantTitle: variant.title,
+            shopifySku: variant.sku || "",
+            price: variant.price,
+            inventoryQuantity: variant.inventory_quantity,
+          }))
+        )
+      } else {
+        // Product has <100 variants, use the variants from product response
+        allVariants.push(
+          ...product.variants.map((variant) => ({
+            shopifyProductId: String(product.id),
+            shopifyVariantId: String(variant.id),
+            productTitle: product.title,
+            variantTitle: variant.title,
+            shopifySku: variant.sku || "",
+            price: variant.price,
+            inventoryQuantity: variant.inventory_quantity,
+          }))
+        )
+      }
+    }
 
     return {
       success: true,
-      variants: shopifyVariants,
-      totalCount: shopifyVariants.length,
+      variants: allVariants,
+      totalCount: allVariants.length,
     }
   } catch (error) {
     console.error("Error fetching Shopify products:", error)
