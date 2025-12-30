@@ -168,6 +168,8 @@ export async function getExistingMappings() {
         id: shopifyVariantMappings.id,
         shopifyProductId: shopifyVariantMappings.shopifyProductId,
         shopifyVariantId: shopifyVariantMappings.shopifyVariantId,
+        shopifyProductTitle: shopifyVariantMappings.shopifyProductTitle,
+        shopifyVariantTitle: shopifyVariantMappings.shopifyVariantTitle,
         productVariantId: shopifyVariantMappings.productVariantId,
         quantity: shopifyVariantMappings.quantity,
         syncStatus: shopifyVariantMappings.syncStatus,
@@ -243,6 +245,8 @@ export async function getExistingMappings() {
 export async function createVariantMapping(data: {
   shopifyProductId: string
   shopifyVariantId: string
+  shopifyProductTitle?: string
+  shopifyVariantTitle?: string
   components: Array<{
     erpVariantId: string
     quantity: number
@@ -296,6 +300,8 @@ export async function createVariantMapping(data: {
         .values({
           shopifyProductId: data.shopifyProductId,
           shopifyVariantId: data.shopifyVariantId,
+          shopifyProductTitle: data.shopifyProductTitle,
+          shopifyVariantTitle: data.shopifyVariantTitle,
           productVariantId: component.erpVariantId,
           quantity: component.quantity.toString(),
           syncStatus: "active",
@@ -349,6 +355,8 @@ export async function deleteVariantMapping(mappingId: string) {
 export async function createPropertyMapping(data: {
   shopifyProductId: string
   shopifyVariantId: string
+  shopifyProductTitle?: string
+  shopifyVariantTitle?: string
   propertyRules: Record<string, string>
   components: Array<{
     erpVariantId: string
@@ -409,6 +417,8 @@ export async function createPropertyMapping(data: {
         .values({
           shopifyProductId: data.shopifyProductId,
           shopifyVariantId: data.shopifyVariantId,
+          shopifyProductTitle: data.shopifyProductTitle,
+          shopifyVariantTitle: data.shopifyVariantTitle,
           propertyRules: data.propertyRules,
           productVariantId: component.erpVariantId,
           quantity: component.quantity.toString(),
@@ -443,6 +453,8 @@ export async function getPropertyMappings(shopifyVariantId?: string) {
         id: shopifyPropertyMappings.id,
         shopifyProductId: shopifyPropertyMappings.shopifyProductId,
         shopifyVariantId: shopifyPropertyMappings.shopifyVariantId,
+        shopifyProductTitle: shopifyPropertyMappings.shopifyProductTitle,
+        shopifyVariantTitle: shopifyPropertyMappings.shopifyVariantTitle,
         propertyRules: shopifyPropertyMappings.propertyRules,
         productVariantId: shopifyPropertyMappings.productVariantId,
         quantity: shopifyPropertyMappings.quantity,

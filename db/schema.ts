@@ -194,6 +194,8 @@ export const shopifyPropertyMappings = pgTable("shopify_property_mappings", {
   // Shopify product/variant this mapping applies to
   shopifyProductId: text("shopify_product_id").notNull(),
   shopifyVariantId: text("shopify_variant_id").notNull(),
+  shopifyProductTitle: text("shopify_product_title"), // For display purposes
+  shopifyVariantTitle: text("shopify_variant_title"), // For display purposes
   // Property matching rules (JSON for flexibility)
   // Example: {"GRIPS": "TÜRKIS"} or {"BASKET": "POWDER BASKETS", "BASKETS": "TÜRKIS"}
   propertyRules: jsonb("property_rules").notNull(),

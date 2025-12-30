@@ -269,6 +269,8 @@ export default function ShopifyMappingPage() {
       const result = await createVariantMapping({
         shopifyProductId: editingVariant.shopifyProductId,
         shopifyVariantId: editingVariant.shopifyVariantId,
+        shopifyProductTitle: editingVariant.productTitle,
+        shopifyVariantTitle: editingVariant.variantTitle,
         components: componentDraft,
       })
 
@@ -399,6 +401,8 @@ export default function ShopifyMappingPage() {
       const result = await createPropertyMapping({
         shopifyProductId: editingPropertyVariant.shopifyProductId,
         shopifyVariantId: editingPropertyVariant.shopifyVariantId,
+        shopifyProductTitle: editingPropertyVariant.productTitle,
+        shopifyVariantTitle: editingPropertyVariant.variantTitle,
         propertyRules,
         components: propertyComponentsDraft.map(c => ({
           erpVariantId: c.erpVariantId,
