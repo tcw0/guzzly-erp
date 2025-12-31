@@ -48,6 +48,8 @@ import {
   createPropertyMapping,
   getPropertyMappings,
   deletePropertyMapping,
+  findMatchingVariants,
+  bulkCopyVariantMapping,
 } from "@/server/shopify-sync"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
@@ -62,6 +64,7 @@ import {
   Package,
   Settings2,
   Box,
+  Copy,
 } from "lucide-react"
 
 interface ShopifyVariant {
@@ -72,6 +75,9 @@ interface ShopifyVariant {
   shopifySku: string
   price: string
   inventoryQuantity: number
+  option1?: string
+  option2?: string
+  option3?: string
 }
 
 interface ERPVariant {
@@ -149,6 +155,7 @@ export default function ShopifyMappingPage() {
     Array<{ erpVariantId: string; quantity: number }>
   >([])
   const [saving, setSaving] = useState(false)
+  const [copying, setCopying] = useState(false)
 
   // Property mapping state
   const [propertyMappings, setPropertyMappings] = useState<PropertyMapping[]>(
@@ -288,6 +295,87 @@ export default function ShopifyMappingPage() {
       console.error(error)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleBulkCopyMapping() {
+    if (!editingVariant) return
+
+    // Validate component selections first
+    const invalidComponents = componentDraft.filter((c) => !c.erpVariantId)
+    if (invalidComponents.length > 0) {
+      toast.error("Please select an ERP product for all components")
+      return
+    }
+
+    if (componentDraft.length === 0) {
+      toast.error("Please add at least one component")
+      return
+    }
+
+    setCopying(true)
+    try {
+      // First save/update the current variant mapping
+      const saveResult = await createVariantMapping({
+        shopifyProductId: editingVariant.shopifyProductId,
+        shopifyVariantId: editingVariant.shopifyVariantId,
+        shopifyProductTitle: editingVariant.productTitle,
+        shopifyVariantTitle: editingVariant.variantTitle,
+        components: componentDraft,
+      })
+
+      if (!saveResult.success) {
+        toast.error(saveResult.error || "Failed to save current variant")
+        return
+      }
+
+      const matchResult = await findMatchingVariants({
+        allVariants: shopifyVariants,
+        sourceVariantId: editingVariant.shopifyVariantId,
+      })
+
+      if (!matchResult.success || !matchResult.matching) {
+        toast.error(matchResult.error || "Failed to find matching variants")
+        return
+      }
+
+      const targetVariantIds = matchResult.matching.map(
+        (v: any) => v.shopifyVariantId
+      )
+
+      if (targetVariantIds.length === 0) {
+        toast.info("No other variants share the same first two options")
+        return
+      }
+
+      const result = await bulkCopyVariantMapping({
+        shopifyProductId: editingVariant.shopifyProductId,
+        sourceShopifyVariantId: editingVariant.shopifyVariantId,
+        targetVariantIds,
+        shopifyProductTitle: editingVariant.productTitle,
+        shopifyVariantTitle: editingVariant.variantTitle,
+        components: componentDraft.map((c) => ({
+          erpVariantId: c.erpVariantId,
+          quantity: c.quantity,
+        })),
+      })
+
+      if (result.success) {
+        toast.success(
+          `Saved and copied to ${targetVariantIds.length} matching variant(s)`
+        )
+        setDialogOpen(false)
+        setEditingVariant(null)
+        setComponentDraft([])
+        await loadData()
+      } else {
+        toast.error(result.error || "Failed to bulk-copy mapping")
+      }
+    } catch (error) {
+      toast.error("An error occurred while bulk-copying")
+      console.error(error)
+    } finally {
+      setCopying(false)
     }
   }
 
@@ -1335,6 +1423,11 @@ export default function ShopifyMappingPage() {
 
           <Separator />
 
+          <p className="text-xs text-muted-foreground px-1">
+            Bulk copy will apply this mapping to variants with the same first two options
+            (e.g., basket + strap) and any length.
+          </p>
+
           <DialogFooter>
             <Button
               variant="outline"
@@ -1346,6 +1439,24 @@ export default function ShopifyMappingPage() {
               disabled={saving}
             >
               Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleBulkCopyMapping}
+              disabled={saving || copying}
+            >
+              {copying ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Copying...
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Save & Copy
+                </>
+              )}
             </Button>
             <Button onClick={handleSaveMapping} disabled={saving}>
               {saving ? (

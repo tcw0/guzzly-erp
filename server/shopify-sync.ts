@@ -21,6 +21,9 @@ interface ShopifyVariant {
   sku: string
   price: string
   inventory_quantity: number
+  option1?: string
+  option2?: string
+  option3?: string
 }
 
 interface ShopifyProduct {
@@ -100,6 +103,9 @@ export async function fetchShopifyProducts() {
       shopifySku: string
       price: string
       inventoryQuantity: number
+      option1?: string
+      option2?: string
+      option3?: string
     }> = []
 
     for (const product of allProducts) {
@@ -120,6 +126,9 @@ export async function fetchShopifyProducts() {
             shopifySku: variant.sku || "",
             price: variant.price,
             inventoryQuantity: variant.inventory_quantity,
+            option1: variant.option1,
+            option2: variant.option2,
+            option3: variant.option3,
           }))
         )
       } else {
@@ -133,10 +142,15 @@ export async function fetchShopifyProducts() {
             shopifySku: variant.sku || "",
             price: variant.price,
             inventoryQuantity: variant.inventory_quantity,
+            option1: variant.option1,
+            option2: variant.option2,
+            option3: variant.option3,
           }))
         )
       }
     }
+
+    console.log(allVariants[0])
 
     return {
       success: true,
@@ -385,6 +399,143 @@ export async function createVariantMapping(data: {
     }
   } catch (error) {
     console.error("Error creating variant mapping:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }
+  }
+}
+
+/**
+ * Find all variants matching the same option1 and option2 (ignoring option3)
+ * Used for bulk-copying mappings across all variants with different option3 values (e.g., lengths)
+ */
+export async function findMatchingVariants(data: {
+  allVariants: Array<{
+    shopifyProductId: string
+    shopifyVariantId: string
+    productTitle: string
+    variantTitle: string
+    option1?: string
+    option2?: string
+    option3?: string
+  }>
+  sourceVariantId: string
+}) {
+  const sourceVariant = data.allVariants.find(
+    (v) => v.shopifyVariantId === data.sourceVariantId
+  )
+
+  if (!sourceVariant) {
+    return {
+      success: false,
+      error: "Source variant not found",
+      matching: [],
+    }
+  }
+
+  // Find all variants with same option1 + option2, different option3
+  const matching = data.allVariants.filter(
+    (v) =>
+      v.shopifyProductId === sourceVariant.shopifyProductId &&
+      v.option1 === sourceVariant.option1 &&
+      v.option2 === sourceVariant.option2 &&
+      v.shopifyVariantId !== sourceVariant.shopifyVariantId // Exclude the source itself
+  )
+
+  return {
+    success: true,
+    sourceVariant,
+    matching,
+    count: matching.length,
+  }
+}
+
+/**
+ * Bulk-copy a variant mapping to all matching variants (same option1 + option2, different option3)
+ */
+export async function bulkCopyVariantMapping(data: {
+  shopifyProductId: string
+  sourceShopifyVariantId: string
+  targetVariantIds: string[] // Other variant IDs to copy to
+  components: Array<{
+    erpVariantId: string
+    quantity: number
+  }>
+  shopifyProductTitle?: string
+  shopifyVariantTitle?: string
+}) {
+  try {
+    if (!data.targetVariantIds || data.targetVariantIds.length === 0) {
+      return {
+        success: false,
+        error: "No target variants provided",
+      }
+    }
+
+    if (!data.components || data.components.length === 0) {
+      return {
+        success: false,
+        error: "At least one component is required",
+      }
+    }
+
+    const createdMappings = []
+
+    // For each target variant, create mappings with same components
+    for (const targetVariantId of data.targetVariantIds) {
+      for (const component of data.components) {
+        // Validate component variant exists and is FINAL
+        const [componentVariant] = await db
+          .select({
+            id: productVariants.id,
+            productType: products.type,
+          })
+          .from(productVariants)
+          .leftJoin(products, eq(productVariants.productId, products.id))
+          .where(eq(productVariants.id, component.erpVariantId))
+          .limit(1)
+
+        if (!componentVariant) {
+          return {
+            success: false,
+            error: `Component variant ${component.erpVariantId} not found`,
+          }
+        }
+
+        if (componentVariant.productType !== "FINAL") {
+          return {
+            success: false,
+            error: "Only FINAL products can be mapped to Shopify",
+          }
+        }
+
+        // Create mapping for this component
+        const [created] = await db
+          .insert(shopifyVariantMappings)
+          .values({
+            shopifyProductId: data.shopifyProductId,
+            shopifyVariantId: targetVariantId,
+            shopifyProductTitle: data.shopifyProductTitle,
+            shopifyVariantTitle: data.shopifyVariantTitle,
+            productVariantId: component.erpVariantId,
+            quantity: component.quantity.toString(),
+            syncStatus: "active",
+            lastSyncedAt: new Date(),
+          })
+          .returning()
+
+        createdMappings.push(created)
+      }
+    }
+
+    return {
+      success: true,
+      mappings: createdMappings,
+      message: `Bulk mapping created successfully for ${data.targetVariantIds.length} variant(s) with ${data.components.length} component(s) each`,
+    }
+  } catch (error) {
+    console.error("Error bulk-copying variant mapping:", error)
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
