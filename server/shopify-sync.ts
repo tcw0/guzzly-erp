@@ -407,8 +407,40 @@ export async function createVariantMapping(data: {
 }
 
 /**
- * Find all variants matching the same option1 and option2 (ignoring option3)
- * Used for bulk-copying mappings across all variants with different option3 values (e.g., lengths)
+ * Detect the number of significant options (non-null) for a product
+ * The last non-null option is assumed to be the variable dimension (length/size)
+ * Significant options = total options - 1
+ *
+ * Examples:
+ * - Poles: option1, option2, option3 set → 3 total → 2 significant
+ * - Sticks: option1, option2 set, option3 null → 2 total → 1 significant
+ * - Simple: option1 set → 1 total → 1 significant (minimum)
+ */
+function detectSignificantOptionCount(
+  variants: Array<{
+    option1?: string
+    option2?: string
+    option3?: string
+  }>
+): number {
+  if (variants.length === 0) return 1
+
+  const firstVariant = variants[0]
+
+  // Count how many options are set (non-null/non-undefined)
+  let totalOptions = 0
+  if (firstVariant.option1) totalOptions++
+  if (firstVariant.option2) totalOptions++
+  if (firstVariant.option3) totalOptions++
+
+  // Significant options = total - 1 (last one is length/size)
+  // Minimum of 1 if only one option exists
+  return Math.max(1, totalOptions - 1)
+}
+
+/**
+ * Find all variants matching the same significant options (ignoring length/size dimension)
+ * Uses auto-detection to determine which options are significant based on which are non-null
  */
 export async function findMatchingVariants(data: {
   allVariants: Array<{
@@ -434,25 +466,46 @@ export async function findMatchingVariants(data: {
     }
   }
 
-  // Find all variants with same option1 + option2, different option3
-  const matching = data.allVariants.filter(
-    (v) =>
-      v.shopifyProductId === sourceVariant.shopifyProductId &&
-      v.option1 === sourceVariant.option1 &&
-      v.option2 === sourceVariant.option2 &&
-      v.shopifyVariantId !== sourceVariant.shopifyVariantId // Exclude the source itself
-  )
+  // Detect how many options are significant for this product
+  const significantCount = detectSignificantOptionCount(data.allVariants)
+
+  // Find all variants with same significant options, different last option
+  const matching = data.allVariants.filter((v) => {
+    if (v.shopifyProductId !== sourceVariant.shopifyProductId) return false
+    if (v.shopifyVariantId === sourceVariant.shopifyVariantId) return false // Exclude source
+
+    // Match based on significant option count
+    if (significantCount === 1) {
+      // Only option1 matters (e.g., sticks: color only)
+      return v.option1 === sourceVariant.option1
+    } else if (significantCount === 2) {
+      // Option1 and option2 matter (e.g., poles: basket + strap)
+      return (
+        v.option1 === sourceVariant.option1 &&
+        v.option2 === sourceVariant.option2
+      )
+    } else {
+      // All three options matter (rare, but fallback)
+      return (
+        v.option1 === sourceVariant.option1 &&
+        v.option2 === sourceVariant.option2 &&
+        v.option3 === sourceVariant.option3
+      )
+    }
+  })
 
   return {
     success: true,
     sourceVariant,
     matching,
     count: matching.length,
+    significantCount,
   }
 }
 
 /**
- * Bulk-copy a variant mapping to all matching variants (same option1 + option2, different option3)
+ * Bulk-copy a variant mapping to all matching variants
+ * Automatically detects significant options and copies to variants with same significant options
  */
 export async function bulkCopyVariantMapping(data: {
   shopifyProductId: string
@@ -548,6 +601,7 @@ export async function bulkCopyVariantMapping(data: {
  */
 export async function deleteVariantMapping(mappingId: string) {
   try {
+    console.log("Deleting variant mapping:", mappingId)
     await db
       .delete(shopifyVariantMappings)
       .where(eq(shopifyVariantMappings.id, mappingId))

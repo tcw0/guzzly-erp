@@ -344,7 +344,11 @@ export default function ShopifyMappingPage() {
       )
 
       if (targetVariantIds.length === 0) {
-        toast.info("No other variants share the same first two options")
+        const message =
+          matchResult.significantCount === 1
+            ? "No other variants share the same option"
+            : "No other variants share the same first options"
+        toast.info(message)
         return
       }
 
@@ -382,13 +386,11 @@ export default function ShopifyMappingPage() {
   async function handleDeleteMapping(shopifyVariantId: string) {
     const mapping = getMappingForShopifyVariant(shopifyVariantId)
     if (!mapping || !mapping.components[0]?.id) return
-
     try {
       // Delete first component's mapping (will cascade delete all components)
       const result = await deleteVariantMapping(mapping.components[0].id)
       if (result.success) {
         toast.success(result.message)
-        await loadData()
       } else {
         toast.error(result.error || "Failed to delete mapping")
       }
@@ -438,11 +440,16 @@ export default function ShopifyMappingPage() {
   }
 
   function addPropertyComponent() {
-    setPropertyComponentsDraft([...propertyComponentsDraft, { erpVariantId: "", quantity: 1 }])
+    setPropertyComponentsDraft([
+      ...propertyComponentsDraft,
+      { erpVariantId: "", quantity: 1 },
+    ])
   }
 
   function removePropertyComponent(index: number) {
-    setPropertyComponentsDraft(propertyComponentsDraft.filter((_, i) => i !== index))
+    setPropertyComponentsDraft(
+      propertyComponentsDraft.filter((_, i) => i !== index)
+    )
   }
 
   function updatePropertyComponent(
@@ -466,7 +473,9 @@ export default function ShopifyMappingPage() {
     }
 
     // Validate: all components must have ERP variant selected
-    const invalidComponents = propertyComponentsDraft.filter((c) => !c.erpVariantId)
+    const invalidComponents = propertyComponentsDraft.filter(
+      (c) => !c.erpVariantId
+    )
     if (invalidComponents.length > 0) {
       toast.error("Please select an ERP product for all components")
       return
@@ -492,7 +501,7 @@ export default function ShopifyMappingPage() {
         shopifyProductTitle: editingPropertyVariant.productTitle,
         shopifyVariantTitle: editingPropertyVariant.variantTitle,
         propertyRules,
-        components: propertyComponentsDraft.map(c => ({
+        components: propertyComponentsDraft.map((c) => ({
           erpVariantId: c.erpVariantId,
           quantity: c.quantity,
         })),
@@ -517,19 +526,19 @@ export default function ShopifyMappingPage() {
   async function handleDeletePropertyMapping(mappingId: string) {
     try {
       // Get the mapping to find its property rules
-      const mapping = propertyMappings.find(m => m.id === mappingId)
+      const mapping = propertyMappings.find((m) => m.id === mappingId)
       if (!mapping) return
 
       // Delete all mappings with the same property rules (entire group)
       const sameMappings = propertyMappings.filter(
-        m => JSON.stringify(m.propertyRules) === JSON.stringify(mapping.propertyRules) &&
-             m.shopifyVariantId === mapping.shopifyVariantId
+        (m) =>
+          JSON.stringify(m.propertyRules) ===
+            JSON.stringify(mapping.propertyRules) &&
+          m.shopifyVariantId === mapping.shopifyVariantId
       )
 
       // Delete all of them
-      await Promise.all(
-        sameMappings.map(m => deletePropertyMapping(m.id))
-      )
+      await Promise.all(sameMappings.map((m) => deletePropertyMapping(m.id)))
 
       toast.success("Property mapping group deleted successfully")
       await loadPropertyMappings()
@@ -936,21 +945,26 @@ export default function ShopifyMappingPage() {
                             )
 
                             // Group mappings by property rules
-                            const groupedMappings = variantMappings.reduce((acc, mapping) => {
-                              const key = JSON.stringify(mapping.propertyRules)
-                              if (!acc[key]) {
-                                acc[key] = {
-                                  propertyRules: mapping.propertyRules,
-                                  components: [],
+                            const groupedMappings = variantMappings.reduce(
+                              (acc, mapping) => {
+                                const key = JSON.stringify(
+                                  mapping.propertyRules
+                                )
+                                if (!acc[key]) {
+                                  acc[key] = {
+                                    propertyRules: mapping.propertyRules,
+                                    components: [],
+                                  }
                                 }
-                              }
-                              acc[key].components.push({
-                                id: mapping.id,
-                                erpProductName: mapping.erpProductName,
-                                quantity: mapping.quantity,
-                              })
-                              return acc
-                            }, {} as Record<string, any>)
+                                acc[key].components.push({
+                                  id: mapping.id,
+                                  erpProductName: mapping.erpProductName,
+                                  quantity: mapping.quantity,
+                                })
+                                return acc
+                              },
+                              {} as Record<string, any>
+                            )
 
                             const mappingGroups = Object.values(groupedMappings)
 
@@ -981,53 +995,62 @@ export default function ShopifyMappingPage() {
                                     </Badge>
                                   ) : (
                                     <div className="space-y-3">
-                                      {mappingGroups.map((group: any, groupIdx: number) => (
-                                        <div
-                                          key={groupIdx}
-                                          className="border rounded p-2 space-y-1"
-                                        >
-                                          <div className="flex items-center gap-2 text-xs">
-                                            <Badge
-                                              variant="outline"
-                                              className="font-mono"
-                                            >
-                                              {JSON.stringify(group.propertyRules)}
-                                            </Badge>
-                                            <span className="text-muted-foreground">
-                                              → {group.components.length} component(s)
-                                            </span>
-                                          </div>
-                                          <div className="ml-4 space-y-1">
-                                            {group.components.map((comp: any) => (
-                                              <div
-                                                key={comp.id}
-                                                className="flex items-center gap-2 text-xs"
+                                      {mappingGroups.map(
+                                        (group: any, groupIdx: number) => (
+                                          <div
+                                            key={groupIdx}
+                                            className="border rounded p-2 space-y-1"
+                                          >
+                                            <div className="flex items-center gap-2 text-xs">
+                                              <Badge
+                                                variant="outline"
+                                                className="font-mono"
                                               >
-                                                <Package className="h-3 w-3 text-muted-foreground" />
-                                                <span className="font-medium">
-                                                  {comp.erpProductName}
-                                                </span>
+                                                {JSON.stringify(
+                                                  group.propertyRules
+                                                )}
+                                              </Badge>
+                                              <span className="text-muted-foreground">
+                                                → {group.components.length}{" "}
+                                                component(s)
+                                              </span>
+                                            </div>
+                                            <div className="ml-4 space-y-1">
+                                              {group.components.map(
+                                                (comp: any) => (
+                                                  <div
+                                                    key={comp.id}
+                                                    className="flex items-center gap-2 text-xs"
+                                                  >
+                                                    <Package className="h-3 w-3 text-muted-foreground" />
+                                                    <span className="font-medium">
+                                                      {comp.erpProductName}
+                                                    </span>
 
-                                                <span className="text-muted-foreground">
-                                                  ×{comp.quantity}
-                                                </span>
-                                              </div>
-                                            ))}
+                                                    <span className="text-muted-foreground">
+                                                      ×{comp.quantity}
+                                                    </span>
+                                                  </div>
+                                                )
+                                              )}
+                                            </div>
+                                            <div className="flex justify-end">
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={() =>
+                                                  handleDeletePropertyMapping(
+                                                    group.components[0].id
+                                                  )
+                                                }
+                                              >
+                                                <Trash2 className="h-3 w-3" />
+                                              </Button>
+                                            </div>
                                           </div>
-                                          <div className="flex justify-end">
-                                            <Button
-                                              variant="ghost"
-                                              size="icon"
-                                              className="h-6 w-6"
-                                              onClick={() =>
-                                                handleDeletePropertyMapping(group.components[0].id)
-                                              }
-                                            >
-                                              <Trash2 className="h-3 w-3" />
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      ))}
+                                        )
+                                      )}
                                     </div>
                                   )}
                                 </TableCell>
@@ -1181,7 +1204,8 @@ export default function ShopifyMappingPage() {
                       </Button>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Select which ERP variants to deduct when properties match (can be multiple for sets)
+                      Select which ERP variants to deduct when properties match
+                      (can be multiple for sets)
                     </p>
 
                     <div className="space-y-3">
@@ -1197,7 +1221,11 @@ export default function ShopifyMappingPage() {
                                   <Select
                                     value={component.erpVariantId}
                                     onValueChange={(value) =>
-                                      updatePropertyComponent(index, "erpVariantId", value)
+                                      updatePropertyComponent(
+                                        index,
+                                        "erpVariantId",
+                                        value
+                                      )
                                     }
                                   >
                                     <SelectTrigger id={`prop-erp-${index}`}>
@@ -1208,14 +1236,22 @@ export default function ShopifyMappingPage() {
                                         {erpVariants
                                           .filter(
                                             (variant) =>
-                                              variant.variantId || variant.productId
+                                              variant.variantId ||
+                                              variant.productId
                                           )
                                           .map((variant) => (
                                             <SelectItem
-                                              key={variant.variantId || variant.productId}
-                                              value={variant.variantId || variant.productId}
+                                              key={
+                                                variant.variantId ||
+                                                variant.productId
+                                              }
+                                              value={
+                                                variant.variantId ||
+                                                variant.productId
+                                              }
                                             >
-                                              {variant.variantDisplay && `${variant.variantDisplay}`}
+                                              {variant.variantDisplay &&
+                                                `${variant.variantDisplay}`}
                                               {variant.variantSku && (
                                                 <span className="text-muted-foreground ml-2">
                                                   ({variant.variantSku})
@@ -1230,7 +1266,9 @@ export default function ShopifyMappingPage() {
 
                                 <div className="grid grid-cols-1 gap-3">
                                   <div className="space-y-2">
-                                    <Label htmlFor={`prop-qty-${index}`}>Quantity</Label>
+                                    <Label htmlFor={`prop-qty-${index}`}>
+                                      Quantity
+                                    </Label>
                                     <Input
                                       id={`prop-qty-${index}`}
                                       type="number"
@@ -1424,8 +1462,8 @@ export default function ShopifyMappingPage() {
           <Separator />
 
           <p className="text-xs text-muted-foreground px-1">
-            Bulk copy will apply this mapping to variants with the same first two options
-            (e.g., basket + strap) and any length.
+            Bulk copy will apply this mapping to variants with the same first
+            two options (e.g., basket + strap) and any length.
           </p>
 
           <DialogFooter>
