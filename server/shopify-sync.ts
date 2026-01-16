@@ -11,7 +11,7 @@ import {
   shopifyPropertyMappings,
 } from "@/db/schema"
 import { shopifyAdminAPI, shopifyRateLimiter } from "@/lib/shopify"
-import { eq, and, isNull } from "drizzle-orm"
+import { eq, and, isNull, inArray } from "drizzle-orm"
 
 // Types for Shopify API responses
 interface ShopifyVariant {
@@ -534,6 +534,15 @@ export async function bulkCopyVariantMapping(data: {
     }
 
     const createdMappings = []
+
+    // Delete existing mappings for all target variants first (to allow overwriting)
+    if (data.targetVariantIds.length > 0) {
+      await db
+        .delete(shopifyVariantMappings)
+        .where(
+          inArray(shopifyVariantMappings.shopifyVariantId, data.targetVariantIds)
+        )
+    }
 
     // For each target variant, create mappings with same components
     for (const targetVariantId of data.targetVariantIds) {
