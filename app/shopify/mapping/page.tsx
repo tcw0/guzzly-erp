@@ -385,12 +385,13 @@ export default function ShopifyMappingPage() {
 
   async function handleDeleteMapping(shopifyVariantId: string) {
     const mapping = getMappingForShopifyVariant(shopifyVariantId)
-    if (!mapping || !mapping.components[0]?.id) return
+    if (!mapping) return
     try {
-      // Delete first component's mapping (will cascade delete all components)
-      const result = await deleteVariantMapping(mapping.components[0].id)
+      // Delete all component mappings for this Shopify variant
+      const result = await deleteVariantMapping(shopifyVariantId)
       if (result.success) {
         toast.success(result.message)
+        await loadData()
       } else {
         toast.error(result.error || "Failed to delete mapping")
       }

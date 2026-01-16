@@ -597,14 +597,14 @@ export async function bulkCopyVariantMapping(data: {
 }
 
 /**
- * Delete a variant mapping
+ * Delete a variant mapping (deletes all component mappings for the Shopify variant)
  */
-export async function deleteVariantMapping(mappingId: string) {
+export async function deleteVariantMapping(shopifyVariantId: string) {
   try {
-    console.log("Deleting variant mapping:", mappingId)
+    console.log("Deleting all mappings for variant:", shopifyVariantId)
     await db
       .delete(shopifyVariantMappings)
-      .where(eq(shopifyVariantMappings.id, mappingId))
+      .where(eq(shopifyVariantMappings.shopifyVariantId, shopifyVariantId))
 
     return {
       success: true,
