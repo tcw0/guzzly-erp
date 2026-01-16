@@ -11,8 +11,9 @@ import {
 } from "@/db/schema"
 import { db } from "@/db/drizzle"
 import { OutputParams, ProductParams } from "@/lib/validation"
-import { sql, eq } from "drizzle-orm"
+import { sql, eq, inArray } from "drizzle-orm"
 import { unstable_noStore as noStore } from "next/cache"
+import { alias } from "drizzle-orm/pg-core"
 
 export const getProducts = async () => {
   noStore() // Disable caching for this function
@@ -639,6 +640,367 @@ export async function getProductWithVariations(productId: string) {
         error instanceof Error
           ? error.message
           : "Failed to fetch product with variations",
+    }
+  }
+}
+
+// Get product details, variations, and current component summary for editing
+export async function getProductForEdit(productId: string) {
+  try {
+    const product = await db
+      .select()
+      .from(products)
+      .where(eq(products.id, productId))
+      .limit(1)
+
+    if (!product[0]) {
+      return {
+        success: false,
+        message: "Product not found",
+      }
+    }
+
+    const variants = await db
+      .select()
+      .from(productVariants)
+      .where(eq(productVariants.productId, productId))
+
+    const minimumStockLevel = variants[0]
+      ? Number(variants[0].minimumStockLevel)
+      : 0
+
+    // Variations + options (grouped)
+    const variationsRows = await db
+      .select({
+        variation: productVariations,
+        options: productVariationOptions,
+      })
+      .from(productVariations)
+      .leftJoin(
+        productVariationOptions,
+        eq(productVariationOptions.variationId, productVariations.id)
+      )
+      .where(eq(productVariations.productId, productId))
+
+    const variationMap = new Map<
+      string,
+      {
+        name: string
+        options: string[]
+      }
+    >()
+
+    for (const row of variationsRows) {
+      if (!row.variation) continue
+      if (!variationMap.has(row.variation.id)) {
+        variationMap.set(row.variation.id, {
+          name: row.variation.name,
+          options: [],
+        })
+      }
+
+      if (row.options) {
+        variationMap.get(row.variation.id)!.options.push(row.options.value)
+      }
+    }
+
+    // Derive component list from BOM (note: mapping rules are not stored; user must reselect if needed)
+    const componentVariants = alias(productVariants, "componentVariants")
+    const componentProducts = alias(products, "componentProducts")
+
+    const bomRows = await db
+      .select({
+        componentProductId: componentProducts.id,
+        quantityRequired: variantBillOfMaterials.quantityRequired,
+      })
+      .from(variantBillOfMaterials)
+      .innerJoin(
+        productVariants,
+        eq(productVariants.id, variantBillOfMaterials.productVariantId)
+      )
+      .innerJoin(
+        componentVariants,
+        eq(componentVariants.id, variantBillOfMaterials.componentVariantId)
+      )
+      .innerJoin(
+        componentProducts,
+        eq(componentProducts.id, componentVariants.productId)
+      )
+      .where(eq(productVariants.productId, productId))
+
+    const componentMap = new Map<
+      string,
+      { componentId: string; quantityRequired: number }
+    >()
+
+    for (const row of bomRows) {
+      if (!componentMap.has(row.componentProductId)) {
+        componentMap.set(row.componentProductId, {
+          componentId: row.componentProductId,
+          quantityRequired: Number(row.quantityRequired) || 0,
+        })
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        product: product[0],
+        minimumStockLevel,
+        variations: Array.from(variationMap.values()),
+        components: Array.from(componentMap.values()),
+      },
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error ? error.message : "Failed to fetch product for edit",
+    }
+  }
+}
+
+type UpdateProductParams = ProductParams & { productId: string }
+
+// Update product details and rebuild BOM based on provided components (variants remain unchanged)
+export async function updateProduct(params: UpdateProductParams) {
+  const {
+    productId,
+    name,
+    type,
+    unit,
+    minimumStockLevel,
+    components = [],
+  } = params
+
+  try {
+    const updated = await db.transaction(async (tx) => {
+      // Ensure product exists
+      const [existing] = await tx
+        .update(products)
+        .set({ name, type, unit })
+        .where(eq(products.id, productId))
+        .returning()
+
+      if (!existing) {
+        throw new Error("Product not found")
+      }
+
+      // Get all variants for this product
+      const allProductVariants = await tx
+        .select()
+        .from(productVariants)
+        .where(eq(productVariants.productId, productId))
+
+      const variantIds = allProductVariants.map((v) => v.id)
+
+      // Update minimum stock level across variants
+      if (variantIds.length > 0) {
+        await tx
+          .update(productVariants)
+          .set({ minimumStockLevel: minimumStockLevel.toString() })
+          .where(inArray(productVariants.id, variantIds))
+      }
+
+      // Clear existing BOM entries
+      if (variantIds.length > 0) {
+        await tx
+          .delete(variantBillOfMaterials)
+          .where(inArray(variantBillOfMaterials.productVariantId, variantIds))
+      }
+
+      if (components && components.length > 0 && variantIds.length > 0) {
+        // Build product variant selections map
+        const productVariantSelectionsMap = new Map<
+          string,
+          Array<{ variationName: string; optionValue: string }>
+        >()
+
+        const allSelections = await tx
+          .select({
+            variantId: productVariantSelections.variantId,
+            variationName: productVariations.name,
+            optionValue: productVariationOptions.value,
+          })
+          .from(productVariantSelections)
+          .innerJoin(
+            productVariations,
+            eq(productVariations.id, productVariantSelections.variationId)
+          )
+          .innerJoin(
+            productVariationOptions,
+            eq(productVariationOptions.id, productVariantSelections.optionId)
+          )
+          .where(inArray(productVariantSelections.variantId, variantIds))
+
+        for (const sel of allSelections) {
+          if (!productVariantSelectionsMap.has(sel.variantId)) {
+            productVariantSelectionsMap.set(sel.variantId, [])
+          }
+          productVariantSelectionsMap.get(sel.variantId)!.push({
+            variationName: sel.variationName,
+            optionValue: sel.optionValue,
+          })
+        }
+
+        for (const component of components) {
+          const componentProduct = await tx
+            .select()
+            .from(products)
+            .where(eq(products.id, component.componentId))
+            .limit(1)
+
+          if (!componentProduct[0]) {
+            throw new Error(
+              `Component product ${component.componentId} not found`
+            )
+          }
+
+          const componentVariants = await tx
+            .select()
+            .from(productVariants)
+            .where(eq(productVariants.productId, component.componentId))
+
+          if (componentVariants.length === 0) {
+            throw new Error(
+              `No variants found for component ${component.componentId}`
+            )
+          }
+
+          const componentVariantSelectionsMap = new Map<
+            string,
+            Array<{ variationName: string; optionValue: string }>
+          >()
+
+          const componentVariantIds = componentVariants.map((v) => v.id)
+          const componentSelections = await tx
+            .select({
+              variantId: productVariantSelections.variantId,
+              variationName: productVariations.name,
+              optionValue: productVariationOptions.value,
+            })
+            .from(productVariantSelections)
+            .innerJoin(
+              productVariations,
+              eq(productVariations.id, productVariantSelections.variationId)
+            )
+            .innerJoin(
+              productVariationOptions,
+              eq(productVariationOptions.id, productVariantSelections.optionId)
+            )
+            .where(inArray(productVariantSelections.variantId, componentVariantIds))
+
+          for (const sel of componentSelections) {
+            if (!componentVariantSelectionsMap.has(sel.variantId)) {
+              componentVariantSelectionsMap.set(sel.variantId, [])
+            }
+            componentVariantSelectionsMap.get(sel.variantId)!.push({
+              variationName: sel.variationName,
+              optionValue: sel.optionValue,
+            })
+          }
+
+          for (const productVariant of allProductVariants) {
+            const productSelections =
+              productVariantSelectionsMap.get(productVariant.id) || []
+
+            const componentHasMultipleVariants = componentVariants.length > 1
+            const componentHasSelections =
+              componentVariantSelectionsMap.size > 0
+            const requiresMappingRules =
+              componentHasMultipleVariants || componentHasSelections
+
+            let matchingComponentVariant = componentVariants[0]
+
+            if (
+              component.variantMappingRules &&
+              component.variantMappingRules.length > 0
+            ) {
+              for (const componentVariant of componentVariants) {
+                const componentSelections =
+                  componentVariantSelectionsMap.get(componentVariant.id) || []
+                let matches = true
+
+                for (const rule of component.variantMappingRules) {
+                  const componentSelection = componentSelections.find(
+                    (s) => s.variationName === rule.componentVariationName
+                  )
+
+                  if (
+                    rule.strategy === "mapped" &&
+                    rule.productVariationName
+                  ) {
+                    const productSelection = productSelections.find(
+                      (s) => s.variationName === rule.productVariationName
+                    )
+
+                    if (!productSelection) {
+                      matches = false
+                      break
+                    }
+
+                    if (
+                      !componentSelection ||
+                      componentSelection.optionValue !==
+                        productSelection.optionValue
+                    ) {
+                      matches = false
+                      break
+                    }
+                  } else if (
+                    rule.strategy === "default" &&
+                    rule.defaultOptionValue
+                  ) {
+                    if (
+                      !componentSelection ||
+                      componentSelection.optionValue !== rule.defaultOptionValue
+                    ) {
+                      matches = false
+                      break
+                    }
+                  } else {
+                    throw new Error(
+                      `Invalid mapping rule for component variation "${rule.componentVariationName}"`
+                    )
+                  }
+                }
+
+                if (matches) {
+                  matchingComponentVariant = componentVariant
+                  break
+                }
+              }
+            } else if (!requiresMappingRules) {
+              matchingComponentVariant = componentVariants[0]
+            } else {
+              throw new Error(
+                `Variant mapping rules are required for component ${component.componentId} which has variations`
+              )
+            }
+
+            await tx.insert(variantBillOfMaterials).values({
+              productVariantId: productVariant.id,
+              componentVariantId: matchingComponentVariant.id,
+              quantityRequired: component.quantityRequired.toString(),
+            })
+          }
+        }
+      }
+
+      return existing
+    })
+
+    return {
+      success: true,
+      data: JSON.parse(JSON.stringify(updated)),
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "An error occurred while updating the product",
     }
   }
 }

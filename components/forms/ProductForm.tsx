@@ -25,13 +25,25 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { productFormSchema } from "@/lib/validation"
-import { createProduct } from "@/server/product"
-import { getProducts, getProductWithVariations } from "@/server/product"
+import {
+  createProduct,
+  getProducts,
+  getProductWithVariations,
+  updateProduct,
+} from "@/server/product"
 import { toast } from "sonner"
 import { Loader2, Plus, Trash2 } from "lucide-react"
 import React from "react"
 import { Product } from "@/db/schema"
 import { productTypeEnum } from "@/constants/product-types"
+
+type ProductFormProps = {
+  mode?: "create" | "edit"
+  productId?: string
+  initialValues?: Partial<z.infer<typeof productFormSchema>>
+  onSuccess?: () => void
+  onCancel?: () => void
+}
 
 type ComponentVariations = {
   productId: string
@@ -41,7 +53,13 @@ type ComponentVariations = {
   }>
 }
 
-export default function ProductForm() {
+export default function ProductForm({
+  mode = "create",
+  productId,
+  initialValues,
+  onSuccess,
+  onCancel,
+}: ProductFormProps) {
   const [isLoading, setIsLoading] = React.useState(false)
   const [availableProducts, setAvailableProducts] = React.useState<Product[]>(
     []
@@ -49,6 +67,16 @@ export default function ProductForm() {
   const [componentVariationsMap, setComponentVariationsMap] = React.useState<
     Map<string, ComponentVariations>
   >(new Map())
+  const isEditMode = mode === "edit"
+
+  const defaultValues: z.infer<typeof productFormSchema> = {
+    name: "",
+    type: productTypeEnum.enum.RAW,
+    unit: "",
+    minimumStockLevel: 0,
+    components: [],
+    variations: [],
+  }
 
   const loadProducts = React.useCallback(async () => {
     const result = await getProducts()
@@ -66,14 +94,19 @@ export default function ProductForm() {
       z.infer<typeof productFormSchema>
     >,
     defaultValues: {
-      name: "",
-      type: productTypeEnum.enum.RAW,
-      unit: "",
-      minimumStockLevel: 0,
-      components: [],
-      variations: [],
+      ...defaultValues,
+      ...initialValues,
     },
   })
+
+  React.useEffect(() => {
+    if (initialValues) {
+      form.reset({
+        ...defaultValues,
+        ...initialValues,
+      })
+    }
+  }, [initialValues, form])
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -135,14 +168,26 @@ export default function ProductForm() {
 
   async function onSubmit(values: z.infer<typeof productFormSchema>) {
     setIsLoading(true)
-    const result = await createProduct(values)
+    let result
+
+    if (isEditMode) {
+      if (!productId) {
+        toast.error("Missing product id for update")
+        setIsLoading(false)
+        return
+      }
+      result = await updateProduct({ ...values, productId })
+    } else {
+      result = await createProduct(values)
+    }
 
     if (result.success) {
-      toast.success("Product created successfully")
-      // Refresh products from the server to keep list authoritative
+      toast.success(isEditMode ? "Product updated" : "Product created successfully")
       await loadProducts()
-      // Reset form for creating the next product
-      form.reset()
+      if (!isEditMode) {
+        form.reset(defaultValues)
+      }
+      onSuccess?.()
     } else {
       toast.error(result.message)
     }
@@ -182,6 +227,7 @@ export default function ProductForm() {
               variant="outline"
               size="sm"
               onClick={() => appendVariation({ name: "", options: [] })}
+              disabled={isEditMode}
             >
               <Plus className="size-4 mr-2" /> Add Variation
             </Button>
@@ -203,6 +249,7 @@ export default function ProductForm() {
                             placeholder="Variation name (e.g., Color, Size)"
                             className="book-form_input"
                             {...field}
+                            disabled={isEditMode}
                           />
                         </FormControl>
                         <FormMessage />
@@ -215,6 +262,7 @@ export default function ProductForm() {
                     size="icon"
                     onClick={() => removeVariation(vIndex)}
                     className="shrink-0"
+                    disabled={isEditMode}
                   >
                     <Trash2 className="size-4" />
                   </Button>
@@ -231,11 +279,12 @@ export default function ProductForm() {
                           <FormItem className="flex-1">
                             <FormLabel className="sr-only">Option</FormLabel>
                             <FormControl>
-                              <Input
-                                placeholder="Option (e.g., White, Black, S, M)"
-                                className="book-form_input"
-                                {...field}
-                              />
+                                <Input
+                                  placeholder="Option (e.g., White, Black, S, M)"
+                                  className="book-form_input"
+                                  {...field}
+                                  disabled={isEditMode}
+                                />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -251,6 +300,7 @@ export default function ProductForm() {
                           form.setValue(`variations.${vIndex}.options`, next as any, { shouldValidate: true })
                         }}
                         className="shrink-0"
+                        disabled={isEditMode}
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -266,6 +316,7 @@ export default function ProductForm() {
                       form.setValue(`variations.${vIndex}.options`, next as any, { shouldValidate: true })
                     }}
                     className="mt-1"
+                    disabled={isEditMode}
                   >
                     <Plus className="size-4 mr-2" /> Add Option
                   </Button>
@@ -601,13 +652,20 @@ export default function ProductForm() {
             )}
           />
         )}
-        <Button disabled={isLoading} type="submit" className="book-form_btn">
-          {isLoading ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            "Create Product"
+        <div className="flex items-center gap-2">
+          {onCancel && (
+            <Button type="button" variant="outline" onClick={onCancel} disabled={isLoading}>
+              Cancel
+            </Button>
           )}
-        </Button>
+          <Button disabled={isLoading} type="submit" className="book-form_btn">
+            {isLoading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              isEditMode ? "Update Product" : "Create Product"
+            )}
+          </Button>
+        </div>
       </form>
     </Form>
   )
