@@ -5,6 +5,7 @@ export const INVENTORY_ACTIONS = [
   "OUTPUT",
   "CONSUMPTION",
   "ADJUSTMENT",
+  "SALE"
 ] as const
 
 export const inventoryActionEnum = z.enum(INVENTORY_ACTIONS)

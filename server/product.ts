@@ -4,7 +4,6 @@ import {
   products,
   variantBillOfMaterials,
   inventory,
-  inventoryMovements,
   productVariations,
   productVariationOptions,
   productVariants,
@@ -13,7 +12,6 @@ import {
 import { db } from "@/db/drizzle"
 import { OutputParams, ProductParams } from "@/lib/validation"
 import { sql, eq } from "drizzle-orm"
-import { inventoryActionEnum } from "@/constants/inventory-actions"
 import { unstable_noStore as noStore } from "next/cache"
 
 export const getProducts = async () => {

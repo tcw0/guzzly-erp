@@ -625,7 +625,7 @@ export async function processShopifyOrder(
           productId: component.productId,
           variantId: variantId,
           quantity: (-component.totalQty).toString(),
-          action: inventoryActionEnum.enum.ADJUSTMENT, // Using ADJUSTMENT for sales
+          action: inventoryActionEnum.enum.SALE,
         })
 
         // Update inventory quantity

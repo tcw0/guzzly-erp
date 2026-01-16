@@ -13,16 +13,10 @@ import {
 import { PRODUCT_TYPES } from "@/constants/product-types"
 import { INVENTORY_ACTIONS } from "@/constants/inventory-actions"
 
-export const PRODUCT_TYPE_ENUM = pgEnum("product_type", PRODUCT_TYPES)
-export const INVENTORY_ACTION_ENUM = pgEnum(
-  "inventory_action",
-  INVENTORY_ACTIONS
-)
-
 export const products = pgTable("products", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
   name: varchar("name").notNull(),
-  type: PRODUCT_TYPE_ENUM("type").notNull(),
+  type: text("type").notNull(),
   unit: varchar("unit", { length: 32 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 })
@@ -97,7 +91,7 @@ export const inventoryMovements = pgTable("inventory_movements", {
       onDelete: "set null",
     }),
   quantity: numeric("quantity", { precision: 18, scale: 2 }).notNull(),
-  action: INVENTORY_ACTION_ENUM("action").notNull(),
+  action: text("action").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
