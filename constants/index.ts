@@ -11,6 +11,7 @@ import {
   Webhook,
   Settings,
   Bug,
+  Boxes,
 } from "lucide-react"
 
 export const sidebarLinks = [
@@ -33,6 +34,11 @@ export const sidebarLinks = [
     title: "Inventory",
     url: "/inventory",
     icon: Columns3,
+  },
+  {
+    title: "BOM Overview",
+    url: "/bom",
+    icon: Boxes,
   },
 ]
 
