@@ -27,10 +27,6 @@ export async function createPurchase(params: PurchaseParams) {
           throw new Error(`Product ${item.productId} not found`)
         }
 
-        if (found[0].type !== productTypeEnum.enum.RAW) {
-          throw new Error("Only RAW products can be purchased")
-        }
-
         // Get variantId - use provided one or find default variant
         let variantId = item.variantId
         if (!variantId) {

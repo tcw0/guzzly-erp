@@ -27,7 +27,7 @@ import { createPurchase } from "@/server/purchase"
 import { toast } from "sonner"
 import { Loader2, Plus, Trash2 } from "lucide-react"
 import { Product } from "@/db/schema"
-import { getRawProducts, getProductWithVariations, getProductVariants } from "@/server/product"
+import { getProducts, getProductWithVariations, getProductVariants } from "@/server/product"
 
 type ProductVariations = {
   productId: string
@@ -48,15 +48,15 @@ type ProductVariations = {
 
 export default function PurchaseForm() {
   const [isLoading, setIsLoading] = React.useState(false)
-  const [rawProducts, setRawProducts] = React.useState<Product[]>([])
+  const [availableProducts, setAvailableProducts] = React.useState<Product[]>([])
   const [productVariationsMap, setProductVariationsMap] = React.useState<
     Map<string, ProductVariations>
   >(new Map())
 
   const loadProducts = React.useCallback(async () => {
-    const result = await getRawProducts()
+    const result = await getProducts()
     if (result.success && result.data) {
-      setRawProducts(result.data)
+      setAvailableProducts(result.data)
     }
   }, [])
 
@@ -154,7 +154,7 @@ export default function PurchaseForm() {
           name="purchases"
           render={() => (
             <FormItem>
-              <FormLabel>Purchased Raw Products</FormLabel>
+              <FormLabel>Products</FormLabel>
               <div className="space-y-4">
                 {fields.map((field, index) => {
                   const productId = form.watch(`purchases.${index}.productId`)
@@ -183,7 +183,7 @@ export default function PurchaseForm() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent className="z-60">
-                                  {rawProducts.map((p) => (
+                                  {availableProducts.map((p) => (
                                     <SelectItem key={p.id} value={p.id}>
                                       {p.name} ({p.unit})
                                     </SelectItem>
