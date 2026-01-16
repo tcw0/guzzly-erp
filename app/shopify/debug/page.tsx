@@ -11,12 +11,23 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
-import { Loader2, Play, AlertCircle, CheckCircle2, Copy } from "lucide-react"
+import {
+  Loader2,
+  Play,
+  AlertCircle,
+  CheckCircle2,
+  Copy,
+  Database,
+  RefreshCw,
+} from "lucide-react"
+import { bulkImportFulfilledOrders } from "@/server/shopify-bulk-import"
 
 export default function ShopifyDebugPage() {
   const [payload, setPayload] = useState<string>("")
   const [processing, setProcessing] = useState(false)
   const [result, setResult] = useState<any>(null)
+  const [bulkImporting, setBulkImporting] = useState(false)
+  const [bulkImportResult, setBulkImportResult] = useState<any>(null)
 
   const samplePayload = {
     id: 7186786681160,
@@ -108,13 +119,48 @@ export default function ShopifyDebugPage() {
     }
   }
 
+  async function handleBulkImport() {
+    if (
+      !confirm(
+        "This will import ALL fulfilled orders from Shopify and process them (mapping to ERP products and deducting inventory). Continue?"
+      )
+    ) {
+      return
+    }
+
+    setBulkImporting(true)
+    setBulkImportResult(null)
+
+    try {
+      const result = await bulkImportFulfilledOrders()
+
+      setBulkImportResult(result)
+
+      if (result.success) {
+        toast.success(result.message || "Bulk import completed successfully!")
+      } else {
+        toast.error(result.error || "Bulk import failed")
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error"
+      setBulkImportResult({
+        success: false,
+        error: errorMessage,
+      })
+      toast.error(errorMessage)
+    } finally {
+      setBulkImporting(false)
+    }
+  }
+
   return (
     <div className="container mx-auto py-8 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Shopify Order Debug</h1>
         <p className="text-muted-foreground mt-2">
-          Test order processing with custom payloads and step through with IDE
-          breakpoints
+          Test order processing with custom payloads and bulk import historical
+          orders
         </p>
       </div>
 
@@ -134,6 +180,157 @@ export default function ShopifyDebugPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Bulk Import Section */}
+      {/* Bulk Import Section */}
+      <Card className="border-blue-200 bg-blue-50">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Database className="h-5 w-5 text-blue-600" />
+            <CardTitle className="text-blue-900">
+              Bulk Import Historical Orders
+            </CardTitle>
+          </div>
+          <CardDescription className="text-blue-800">
+            Import all fulfilled orders from Shopify to sync historical data
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-3">
+            <p className="text-sm text-blue-900">
+              This operation will fetch all fulfilled orders from Shopify and
+              process them as if they came through webhooks. Use this to:
+            </p>
+            <ul className="text-sm text-blue-800 list-disc list-inside space-y-1 ml-2">
+              <li>Sync historical orders after setting up the ERP system</li>
+              <li>
+                Re-import all orders after fixing mappings or configuration
+              </li>
+              <li>
+                Backfill order data after manually clearing the database
+              </li>
+            </ul>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mt-4">
+              <p className="text-sm text-yellow-800 font-medium">
+                ⚠️ Note: If you need a clean slate, manually delete data from
+                these tables first:
+              </p>
+              <ul className="text-sm text-yellow-800 list-disc list-inside mt-2 ml-2">
+                <li>shopify_order_items</li>
+                <li>shopify_orders</li>
+                <li>shopify_webhook_logs</li>
+                <li>shopify_order_annotations (optional)</li>
+                <li>inventory_movements (if recalculating from scratch)</li>
+              </ul>
+            </div>
+          </div>
+
+          <Button
+            onClick={handleBulkImport}
+            disabled={bulkImporting}
+            size="lg"
+            className="w-full"
+            variant="default"
+          >
+            {bulkImporting ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Importing Orders...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-5 w-5" />
+                Import All Fulfilled Orders
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Bulk Import Results */}
+      {bulkImportResult && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Bulk Import Results</CardTitle>
+              {bulkImportResult.success ? (
+                <Badge variant="default" className="gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Completed
+                </Badge>
+              ) : (
+                <Badge variant="destructive" className="gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  Failed
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {bulkImportResult.success ? (
+              <>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-muted p-3 rounded-md">
+                    <div className="text-2xl font-bold">
+                      {bulkImportResult.totalOrders}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Total Orders
+                    </div>
+                  </div>
+                  <div className="bg-green-50 p-3 rounded-md">
+                    <div className="text-2xl font-bold text-green-700">
+                      {bulkImportResult.processedCount}
+                    </div>
+                    <div className="text-sm text-green-600">Processed</div>
+                  </div>
+                  <div className="bg-red-50 p-3 rounded-md">
+                    <div className="text-2xl font-bold text-red-700">
+                      {bulkImportResult.errorCount}
+                    </div>
+                    <div className="text-sm text-red-600">Errors</div>
+                  </div>
+                </div>
+
+                {bulkImportResult.errors &&
+                  bulkImportResult.errors.length > 0 && (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2 text-red-600">
+                        Errors (first 10):
+                      </h4>
+                      <div className="space-y-2">
+                        {bulkImportResult.errors.map(
+                          (
+                            err: { orderId: string; error: string },
+                            index: number
+                          ) => (
+                            <div
+                              key={index}
+                              className="text-sm bg-red-50 p-2 rounded"
+                            >
+                              <span className="font-mono text-xs">
+                                Order {err.orderId}:
+                              </span>{" "}
+                              {err.error}
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
+              </>
+            ) : (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-md">
+                <h4 className="font-medium text-red-900 mb-2">Error</h4>
+                <p className="text-sm text-red-800">
+                  {bulkImportResult.error}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Instructions */}
       <Card>
