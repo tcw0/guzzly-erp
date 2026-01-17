@@ -791,9 +791,11 @@ export async function processShopifyOrder(
 
     // 4. Handle unmapped items
     if (mappingResults.unmapped.length > 0) {
-      const errorMessage = `Unmapped items: ${mappingResults.unmapped
-        .map((u) => `${u.lineItem.title} (${u.lineItem.sku}): ${u.reason}`)
-        .join("; ")}`
+      const unmappedDetails = mappingResults.unmapped
+        .map((u) => `${u.lineItem.title} (SKU: ${u.lineItem.sku}) - ${u.reason}`)
+        .join("; ")
+      
+      const errorMessage = `${mappingResults.unmapped.length} of ${mappingResults.unmapped.length + mappingResults.mapped.length} items unmapped. Unmapped: ${unmappedDetails}`
 
       await db
         .update(shopifyOrders)
@@ -803,55 +805,7 @@ export async function processShopifyOrder(
       console.warn(`Order ${shopifyOrderId} has unmapped items:`, errorMessage)
     }
 
-    // 5. Check inventory availability for all components
-    const inventoryChecks = await Promise.all(
-      mappingResults.mapped.map(async (item) => {
-        const [inventoryRecord] = await db
-          .select()
-          .from(inventory)
-          .where(eq(inventory.variantId, item.erpVariantId))
-          .limit(1)
-
-        const quantityOnHand = inventoryRecord
-          ? Number(inventoryRecord.quantityOnHand)
-          : 0
-
-        return {
-          ...item,
-          quantityOnHand,
-          insufficient: quantityOnHand < item.totalQuantity,
-        }
-      })
-    )
-
-    const insufficientStock = inventoryChecks.filter(
-      (check) => check.insufficient
-    )
-
-    if (insufficientStock.length > 0) {
-      const stockWarning = `Insufficient stock: ${insufficientStock
-        .map(
-          (item) =>
-            `${item.erpProductName} (${item.erpSku}) - need ${item.totalQuantity}, have ${item.quantityOnHand}`
-        )
-        .join("; ")}`
-
-      await db
-        .update(shopifyOrders)
-        .set({
-          errorMessage: shopifyOrders.errorMessage
-            ? `${shopifyOrders.errorMessage}; ${stockWarning}`
-            : stockWarning,
-        })
-        .where(eq(shopifyOrders.id, order.id))
-
-      console.warn(
-        `Order ${shopifyOrderId} has insufficient stock:`,
-        stockWarning
-      )
-    }
-
-    // 6. Deduct inventory for all component mappings (sales fulfillment)
+    // 5. Deduct inventory for all component mappings (sales fulfillment)
     if (mappingResults.mapped.length > 0) {
       console.log(
         `[Order ${shopifyOrderId}] Deducting inventory for ${mappingResults.mapped.length} component(s)`
@@ -954,9 +908,7 @@ export async function processShopifyOrder(
       orderId: order.id,
       processedItems: mappingResults.mapped.length,
       unmappedItems: mappingResults.unmapped.length,
-      insufficientStock: insufficientStock.length,
-      warnings:
-        mappingResults.unmapped.length > 0 || insufficientStock.length > 0,
+      warnings: mappingResults.unmapped.length > 0,
     }
   } catch (error) {
     console.error(`[Order Processing] ❌ Fatal error:`, {
@@ -1031,7 +983,7 @@ export async function getShopifyOrders() {
         status: shopifyOrders.status,
         customerEmail: shopifyOrders.customerEmail,
         totalAmount: shopifyOrders.totalAmount,
-        fulfilledAt: shopifyOrders.fulfilledAt,
+        orderCreatedAt: shopifyOrders.orderCreatedAt,
         processedAt: shopifyOrders.processedAt,
         errorMessage: shopifyOrders.errorMessage,
         createdAt: shopifyOrders.createdAt,
