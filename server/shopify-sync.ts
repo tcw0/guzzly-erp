@@ -416,22 +416,18 @@ export async function createVariantMapping(data: {
  * - Sticks: option1, option2 set, option3 null → 2 total → 1 significant
  * - Simple: option1 set → 1 total → 1 significant (minimum)
  */
-function detectSignificantOptionCount(
-  variants: Array<{
-    option1?: string
-    option2?: string
-    option3?: string
-  }>
-): number {
-  if (variants.length === 0) return 1
-
-  const firstVariant = variants[0]
+function detectSignificantOptionCount(variant: {
+  option1?: string
+  option2?: string
+  option3?: string
+}): number {
+  console.log("Variant options:", variant)
 
   // Count how many options are set (non-null/non-undefined)
   let totalOptions = 0
-  if (firstVariant.option1) totalOptions++
-  if (firstVariant.option2) totalOptions++
-  if (firstVariant.option3) totalOptions++
+  if (variant.option1) totalOptions++
+  if (variant.option2) totalOptions++
+  if (variant.option3) totalOptions++
 
   // Significant options = total - 1 (last one is length/size)
   // Minimum of 1 if only one option exists
@@ -467,7 +463,8 @@ export async function findMatchingVariants(data: {
   }
 
   // Detect how many options are significant for this product
-  const significantCount = detectSignificantOptionCount(data.allVariants)
+  const significantCount = detectSignificantOptionCount(sourceVariant)
+  console.log("Detected significant option count:", significantCount)
 
   // Find all variants with same significant options, different last option
   const matching = data.allVariants.filter((v) => {
