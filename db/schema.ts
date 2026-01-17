@@ -218,7 +218,7 @@ export const shopifyOrders = pgTable("shopify_orders", {
   shopifyOrderId: text("shopify_order_id").notNull().unique(),
   shopifyOrderNumber: text("shopify_order_number").notNull(),
   status: text("status").notNull(), // fulfilled, cancelled, refunded
-  fulfilledAt: timestamp("fulfilled_at", { withTimezone: true }),
+  orderCreatedAt: timestamp("order_created_at", { withTimezone: true }),
   totalAmount: numeric("total_amount", { precision: 18, scale: 2 }),
   customerEmail: text("customer_email"),
   // Link to our inventory movement when processed

@@ -513,7 +513,7 @@ export async function processShopifyOrder(
           shopifyOrderId,
           shopifyOrderNumber: String(payload.order_number),
           status: "fulfilled",
-          fulfilledAt: new Date(),
+          orderCreatedAt: payload.created_at ? new Date(payload.created_at) : new Date(),
           totalAmount: payload.total_price,
           customerEmail,
           rawPayload: payload,
@@ -522,7 +522,7 @@ export async function processShopifyOrder(
           target: shopifyOrders.shopifyOrderId,
           set: {
             status: "fulfilled",
-            fulfilledAt: new Date(),
+            orderCreatedAt: payload.created_at ? new Date(payload.created_at) : new Date(),
           },
         })
         .returning()
