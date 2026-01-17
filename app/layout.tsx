@@ -39,7 +39,7 @@ export default function RootLayout({
             {children}
           </main>
         </SidebarProvider>
-        <Toaster />
+        <Toaster duration={Infinity} />
       </body>
     </html>
   )
