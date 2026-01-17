@@ -8,6 +8,7 @@ import {
   shopifyVariantMappings,
   shopifyPropertyMappings,
   shopifyOrderAnnotations,
+  shopifyVariantHistory,
   productVariants,
   products,
   inventory,
@@ -15,7 +16,7 @@ import {
 } from "@/db/schema"
 import { inventoryActionEnum } from "@/constants/inventory-actions"
 import { shopifyAdminAPI } from "@/lib/shopify"
-import { eq, and, sql, inArray } from "drizzle-orm"
+import { eq, and, sql, inArray, desc } from "drizzle-orm"
 
 // Shopify order payload types
 interface ShopifyLineItem {
@@ -217,6 +218,247 @@ export async function getOrderAnnotation(shopifyOrderId: string) {
 }
 
 /**
+ * Resolve variant ID by following immutable variant history chain
+ * Handles cases where Shopify variant IDs change due to variant modifications
+ * 
+ * @param shopifyProductId - The Shopify product ID
+ * @param variantId - The variant ID to resolve (may be old/changed)
+ * @returns Resolved variant ID or original if no history found
+ * @throws Error if circular reference detected in history
+ */
+export async function resolveVariantId(
+  shopifyProductId: string,
+  variantId: string
+): Promise<string> {
+  const visited = new Set<string>()
+  let currentVariantId = variantId
+
+  // Follow the chain until no more replacements found
+  while (true) {
+    if (visited.has(currentVariantId)) {
+      throw new Error(
+        `Circular reference detected in variant history for product ${shopifyProductId}: ${currentVariantId}`
+      )
+    }
+
+    visited.add(currentVariantId)
+
+    // Look for a replacement in the history
+    const [replacement] = await db
+      .select()
+      .from(shopifyVariantHistory)
+      .where(
+        and(
+          eq(shopifyVariantHistory.shopifyProductId, shopifyProductId),
+          eq(shopifyVariantHistory.oldVariantId, currentVariantId)
+        )
+      )
+      .limit(1)
+
+    if (!replacement) {
+      // No more replacements, return current variant ID
+      return currentVariantId
+    }
+
+    // Move to the next in chain
+    currentVariantId = replacement.newVariantId
+  }
+}
+
+/**
+ * Record a variant ID change and update all related mappings
+ * This is called when user manually indicates that a variant ID has changed
+ * 
+ * Atomically:
+ * 1. Validates old variant exists in mappings
+ * 2. Detects conflicts (new variant already mapped)
+ * 3. Updates shopifyVariantMappings
+ * 4. Updates shopifyPropertyMappings
+ * 5. Records immutable history entry
+ * 6. Logs audit trail
+ *
+ * @param shopifyProductId - Product ID for context
+ * @param oldVariantId - The old/previous variant ID
+ * @param newVariantId - The new variant ID
+ * @param notes - Optional notes about the change
+ * @returns { success, message, updatedMappings, updatedPropertyMappings }
+ */
+export async function recordVariantIdChange(
+  shopifyProductId: string,
+  oldVariantId: string,
+  newVariantId: string,
+  notes?: string
+) {
+  // Validation: No self-references
+  if (oldVariantId === newVariantId) {
+    return {
+      success: false,
+      error: "Old and new variant IDs must be different",
+      code: "SAME_VARIANT_ID",
+    }
+  }
+
+  // Validation: Non-empty strings
+  if (!oldVariantId?.trim() || !newVariantId?.trim()) {
+    return {
+      success: false,
+      error: "Variant IDs cannot be empty",
+      code: "EMPTY_VARIANT_ID",
+    }
+  }
+
+  try {
+    // Check if old variant has any mappings (for deciding whether to update)
+    const oldMappings = await db
+      .select()
+      .from(shopifyVariantMappings)
+      .where(
+        and(
+          eq(shopifyVariantMappings.shopifyProductId, shopifyProductId),
+          eq(shopifyVariantMappings.shopifyVariantId, oldVariantId),
+          eq(shopifyVariantMappings.syncStatus, "active")
+        )
+      )
+
+    const hasOldMappings = oldMappings.length > 0
+
+    // Check for conflicts: Ensure new variant doesn't already have any mappings
+    // Check for conflicts: Detect if new variant already has any mappings
+    const newVariantMappingConflict = await db
+      .select()
+      .from(shopifyVariantMappings)
+      .where(
+        and(
+          eq(shopifyVariantMappings.shopifyProductId, shopifyProductId),
+          eq(shopifyVariantMappings.shopifyVariantId, newVariantId),
+          eq(shopifyVariantMappings.syncStatus, "active")
+        )
+      )
+      .limit(1)
+
+    const newPropertyMappingConflict = await db
+      .select()
+      .from(shopifyPropertyMappings)
+      .where(
+        and(
+          eq(shopifyPropertyMappings.shopifyProductId, shopifyProductId),
+          eq(shopifyPropertyMappings.shopifyVariantId, newVariantId),
+          eq(shopifyPropertyMappings.syncStatus, "active")
+        )
+      )
+      .limit(1)
+
+    const hasConflict = newVariantMappingConflict.length > 0 || newPropertyMappingConflict.length > 0
+
+    // Check for circular references in existing history
+    try {
+      await resolveVariantId(shopifyProductId, newVariantId)
+    } catch (err) {
+      return {
+        success: false,
+        error: `Cannot create mapping: ${err instanceof Error ? err.message : "Unknown error"}`,
+        code: "CIRCULAR_REFERENCE",
+      }
+    }
+
+    let updatedVariantMappings: any[] = []
+    let updatedPropertyMappings: any[] = []
+    let skippedReason: string | null = null
+
+    // Only update mappings if there's no conflict AND old mappings exist
+    if (!hasConflict && hasOldMappings) {
+      // Update variant mappings: replace old variant ID with new
+      updatedVariantMappings = await db
+        .update(shopifyVariantMappings)
+        .set({
+          shopifyVariantId: newVariantId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(shopifyVariantMappings.shopifyProductId, shopifyProductId),
+            eq(shopifyVariantMappings.shopifyVariantId, oldVariantId)
+          )
+        )
+        .returning()
+
+      console.log(
+        `Updated ${updatedVariantMappings.length} variant mappings from ${oldVariantId} to ${newVariantId}`
+      )
+
+      // Update property mappings: replace old variant ID with new
+      updatedPropertyMappings = await db
+        .update(shopifyPropertyMappings)
+        .set({
+          shopifyVariantId: newVariantId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(shopifyPropertyMappings.shopifyProductId, shopifyProductId),
+            eq(shopifyPropertyMappings.shopifyVariantId, oldVariantId)
+          )
+        )
+        .returning()
+
+      console.log(
+        `Updated ${updatedPropertyMappings.length} property mappings from ${oldVariantId} to ${newVariantId}`
+      )
+    } else {
+      // Skip mapping updates but continue to record history
+      if (!hasOldMappings && hasConflict) {
+        skippedReason = `No active mappings found for old variant ${oldVariantId} in product ${shopifyProductId}. Additionally, new variant ${newVariantId} already has active mappings. History recorded; no mappings updated.`
+      } else if (!hasOldMappings) {
+        skippedReason = `No active mappings found for old variant ${oldVariantId} in product ${shopifyProductId}. History recorded; no mappings to update.`
+      } else {
+        skippedReason = `New variant ${newVariantId} already has active mappings. History recorded but mappings not updated.`
+      }
+      console.log(`[SKIP] ${skippedReason}`)
+    }
+
+    // Record immutable history entry
+    const [historyEntry] = await db
+      .insert(shopifyVariantHistory)
+      .values({
+        shopifyProductId,
+        oldVariantId,
+        newVariantId,
+        notes: notes || null,
+      })
+      .returning()
+
+    console.log(`Recorded variant history entry:`, historyEntry)
+
+    // Log audit entry  
+    const auditMessage = skippedReason
+      ? `Variant ID changed: ${oldVariantId} → ${newVariantId}. ${skippedReason}`
+      : `Variant ID changed: ${oldVariantId} → ${newVariantId}. Updated ${updatedVariantMappings.length} variant mappings and ${updatedPropertyMappings.length} property mappings.`
+    console.log(`[AUDIT] ${auditMessage}`)
+
+    return {
+      success: true,
+      message: auditMessage,
+      updatedMappings: updatedVariantMappings.length,
+      updatedPropertyMappings: updatedPropertyMappings.length,
+        skipped: hasConflict || !hasOldMappings,
+        skippedReason: skippedReason,
+        existingVariantMappings: hasConflict ? newVariantMappingConflict : undefined,
+        existingPropertyMappings: hasConflict ? newPropertyMappingConflict : undefined,
+      historyEntry,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error"
+    console.error(`Error recording variant ID change: ${message}`, error)
+
+    return {
+      success: false,
+      error: message,
+      code: "OPERATION_FAILED",
+    }
+  }
+}
+
+/**
  * Process a fulfilled Shopify order
  * Maps line items to ERP variants and creates output transaction
  */
@@ -361,6 +603,28 @@ export async function processShopifyOrder(
         continue
       }
 
+      // Resolve variant ID in case it has changed in Shopify's system
+      let resolvedVariantId = shopifyVariantId
+      try {
+        const shopifyProductId = String(lineItem.product_id)
+        if (shopifyProductId && shopifyProductId !== "null") {
+          resolvedVariantId = await resolveVariantId(
+            shopifyProductId,
+            shopifyVariantId
+          )
+          if (resolvedVariantId !== shopifyVariantId) {
+            console.log(
+              `[Order ${shopifyOrderId}] Resolved variant ID: ${shopifyVariantId} → ${resolvedVariantId}`
+            )
+          }
+        }
+      } catch (error) {
+        console.warn(
+          `[Order ${shopifyOrderId}] Failed to resolve variant ID: ${error instanceof Error ? error.message : "Unknown error"}`
+        )
+        // Continue with original variant ID if resolution fails
+      }
+
       // Strategy 1: Try variant-based mappings (fixed component sets)
       let componentMappings = await db
         .select({
@@ -380,7 +644,7 @@ export async function processShopifyOrder(
         .leftJoin(products, eq(productVariants.productId, products.id))
         .where(
           and(
-            eq(shopifyVariantMappings.shopifyVariantId, shopifyVariantId),
+            eq(shopifyVariantMappings.shopifyVariantId, resolvedVariantId),
             eq(shopifyVariantMappings.syncStatus, "active")
           )
         )
@@ -414,7 +678,7 @@ export async function processShopifyOrder(
           .leftJoin(products, eq(productVariants.productId, products.id))
           .where(
             and(
-              eq(shopifyPropertyMappings.shopifyVariantId, shopifyVariantId),
+              eq(shopifyPropertyMappings.shopifyVariantId, resolvedVariantId),
               eq(shopifyPropertyMappings.syncStatus, "active")
             )
           )
@@ -852,4 +1116,47 @@ export async function getWebhookLogs(limit: number = 50) {
       logs: [],
     }
   }
+}
+
+/**
+ * Get recent Shopify variant history entries
+ */
+export async function getVariantHistory(limit: number = 20) {
+  try {
+    const history = await db
+      .select()
+      .from(shopifyVariantHistory)
+      .orderBy(desc(shopifyVariantHistory.createdAt))
+      .limit(limit)
+
+    return {
+      success: true,
+      history,
+    }
+  } catch (error) {
+    console.error("Error fetching variant history:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+      history: [],
+    }
+  }
+}
+
+/**
+ * Server action wrapper for recording variant ID changes from UI
+ * User-facing function to handle variant ID changes with full error reporting
+ */
+export async function recordVariantIdChangeAction(
+  productId: string,
+  oldVariantId: string,
+  newVariantId: string,
+  notes?: string
+) {
+  return recordVariantIdChange(
+    productId,
+    oldVariantId,
+    newVariantId,
+    notes
+  )
 }

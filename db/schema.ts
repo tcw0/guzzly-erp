@@ -9,6 +9,7 @@ import {
   text,
   jsonb,
   boolean,
+  index,
 } from "drizzle-orm/pg-core"
 import { PRODUCT_TYPES } from "@/constants/product-types"
 import { INVENTORY_ACTIONS } from "@/constants/inventory-actions"
@@ -278,6 +279,32 @@ export const shopifyOrderAnnotations = pgTable(
   }
 )
 
+// Track Shopify variant ID changes to handle historical orders
+// Maintains immutable chain: variant_id_123 → variant_id_456 → variant_id_789
+// This allows orders with old variant IDs to still find their mappings
+export const shopifyVariantHistory = pgTable(
+  "shopify_variant_history",
+  {
+    id: uuid("id").notNull().primaryKey().defaultRandom(),
+    shopifyProductId: text("shopify_product_id").notNull(),
+    oldVariantId: text("old_variant_id").notNull(),
+    newVariantId: text("new_variant_id").notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => ({
+    // Unique constraint: One mapping per old variant per product
+    uniqueOldVariantPerProduct: unique("variant_history_product_old_unique").on(
+      table.shopifyProductId,
+      table.oldVariantId
+    ),
+    // Index for resolving chains
+    productIdIdx: index("variant_history_product_id_idx").on(
+      table.shopifyProductId
+    ),
+  })
+)
+
 export type Product = typeof products.$inferSelect
 export type VariantBillOfMaterials = typeof variantBillOfMaterials.$inferSelect
 export type ProductVariation = typeof productVariations.$inferSelect
@@ -288,6 +315,7 @@ export type ShopifyVariantMapping = typeof shopifyVariantMappings.$inferSelect
 export type ShopifyPropertyMapping = typeof shopifyPropertyMappings.$inferSelect
 export type ShopifyOrder = typeof shopifyOrders.$inferSelect
 export type ShopifyOrderItem = typeof shopifyOrderItems.$inferSelect
+export type ShopifyVariantHistory = typeof shopifyVariantHistory.$inferSelect
 export type ShopifyWebhookLog = typeof shopifyWebhookLogs.$inferSelect
 export type ShopifyOrderAnnotation = typeof shopifyOrderAnnotations.$inferSelect
 // export type ManufacturingStep = typeof manufacturingSteps.$inferSelect
