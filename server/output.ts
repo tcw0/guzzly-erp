@@ -124,13 +124,6 @@ export async function createOutput(params: OutputParams) {
                 quantityOnHand: sql`${inventory.quantityOnHand} - ${requiredQuantity}`,
               },
             })
-            .returning({ newQuantity: inventory.quantityOnHand })
-
-          if (parseFloat(result[0].newQuantity.toString()) < 0) {
-            throw new Error(
-              `Insufficient inventory for component variant ${componentVariantId}`
-            )
-          }
         }
       }
 
