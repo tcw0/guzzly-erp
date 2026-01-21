@@ -168,7 +168,7 @@ export default function PurchaseForm() {
                           control={form.control}
                           name={`purchases.${index}.productId`}
                           render={({ field }) => (
-                            <FormItem className="flex-1">
+                            <FormItem className="flex-[1_1_0%] min-w-0 overflow-hidden">
                               <FormLabel className="sr-only">Product</FormLabel>
                               <Select
                                 value={field.value}
@@ -178,7 +178,7 @@ export default function PurchaseForm() {
                                 }}
                               >
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="truncate w-full">
                                     <SelectValue placeholder="Select product" />
                                   </SelectTrigger>
                                 </FormControl>
@@ -198,7 +198,7 @@ export default function PurchaseForm() {
                           control={form.control}
                           name={`purchases.${index}.quantity`}
                           render={({ field }) => (
-                            <FormItem className="flex-1">
+                            <FormItem className="w-16 min-w-16 shrink-0">
                               <FormLabel className="sr-only">Quantity</FormLabel>
                               <FormControl>
                                 <Input

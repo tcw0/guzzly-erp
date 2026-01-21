@@ -168,7 +168,7 @@ export default function AdjustmentForm() {
                           control={form.control}
                           name={`adjustments.${index}.productId`}
                           render={({ field }) => (
-                            <FormItem className="flex-1">
+                            <FormItem className="flex-[1_1_0%] min-w-0 overflow-hidden">
                               <FormLabel className="sr-only">Product</FormLabel>
                               <Select
                                 value={field.value}
@@ -178,7 +178,7 @@ export default function AdjustmentForm() {
                                 }}
                               >
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="truncate w-full">
                                     <SelectValue placeholder="Select product" />
                                   </SelectTrigger>
                                 </FormControl>
@@ -198,12 +198,9 @@ export default function AdjustmentForm() {
                           control={form.control}
                           name={`adjustments.${index}.direction`}
                           render={({ field }) => (
-                            <FormItem className="w-[140px]">
+                            <FormItem className="w-28 min-w-28 shrink-0">
                               <FormLabel className="sr-only">Direction</FormLabel>
-                              <Select
-                                value={field.value}
-                                onValueChange={field.onChange}
-                              >
+                              <Select value={field.value} onValueChange={field.onChange}>
                                 <FormControl>
                                   <SelectTrigger>
                                     <SelectValue placeholder="Type" />
@@ -222,7 +219,7 @@ export default function AdjustmentForm() {
                           control={form.control}
                           name={`adjustments.${index}.quantity`}
                           render={({ field }) => (
-                            <FormItem className="flex-1">
+                            <FormItem className="w-16 min-w-16 shrink-0">
                               <FormLabel className="sr-only">Quantity</FormLabel>
                               <FormControl>
                                 <Input
@@ -230,9 +227,7 @@ export default function AdjustmentForm() {
                                   step="any"
                                   placeholder="Quantity"
                                   {...field}
-                                  onChange={(e) =>
-                                    field.onChange(parseFloat(e.target.value) || 0)
-                                  }
+                                  onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
                                 />
                               </FormControl>
                               <FormMessage />
@@ -257,19 +252,15 @@ export default function AdjustmentForm() {
                         </Button>
                       </div>
 
-                      {/* Variation selectors */}
                       {hasVariations && productData && (
                         <div className="space-y-2">
                           {productData.variations.map((variationData) => {
                             const variationId = variationData.variation.id
-
                             return (
                               <FormField
                                 key={variationId}
                                 control={form.control}
-                                name={
-                                  `adjustments.${index}.variation_${variationId}` as any
-                                }
+                                name={`adjustments.${index}.variation_${variationId}` as any}
                                 render={({ field }) => (
                                   <FormItem className="flex-1">
                                     <FormLabel className="text-sm">
@@ -279,7 +270,6 @@ export default function AdjustmentForm() {
                                       value={field.value || ""}
                                       onValueChange={(value) => {
                                         field.onChange(value)
-                                        // Update all selected options and find matching variant
                                         const allSelections: Record<string, string> = {}
                                         productData.variations.forEach((v) => {
                                           const val = form.getValues(
@@ -290,30 +280,17 @@ export default function AdjustmentForm() {
                                           }
                                         })
                                         allSelections[variationId] = value
-
-                                        // Check if we have all selections
-                                        if (
-                                          Object.keys(allSelections).length ===
-                                          productData.variations.length
-                                        ) {
-                                          const variantId = findVariantId(
-                                            productId,
-                                            allSelections
-                                          )
+                                        if (Object.keys(allSelections).length === productData.variations.length) {
+                                          const variantId = findVariantId(productId, allSelections)
                                           if (variantId) {
-                                            form.setValue(
-                                              `adjustments.${index}.variantId`,
-                                              variantId
-                                            )
+                                            form.setValue(`adjustments.${index}.variantId`, variantId)
                                           }
                                         }
                                       }}
                                     >
                                       <FormControl>
                                         <SelectTrigger>
-                                          <SelectValue
-                                            placeholder={`Select ${variationData.variation.name}`}
-                                          />
+                                          <SelectValue placeholder={`Select ${variationData.variation.name}`} />
                                         </SelectTrigger>
                                       </FormControl>
                                       <SelectContent>
@@ -340,17 +317,13 @@ export default function AdjustmentForm() {
                           <FormItem>
                             <FormLabel className="text-sm">Reason (optional)</FormLabel>
                             <FormControl>
-                              <Input
-                                placeholder="Reason for adjustment"
-                                {...field}
-                              />
+                              <Input placeholder="Reason for adjustment" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
 
-                      {/* Hidden variantId field */}
                       <FormField
                         control={form.control}
                         name={`adjustments.${index}.variantId`}
