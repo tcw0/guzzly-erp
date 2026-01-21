@@ -116,6 +116,26 @@ export const purchaseFormSchema = z.object({
 export type PurchaseFormValues = z.infer<typeof purchaseFormSchema>
 export type PurchaseParams = PurchaseFormValues
 
+// Adjustment form schema
+export const adjustmentFormSchema = z.object({
+  adjustments: z
+    .array(
+      z.object({
+        productId: z.string().uuid(),
+        variantId: z.string().uuid().optional(),
+        direction: z.enum(["increase", "decrease"]),
+        quantity: z
+          .number()
+          .positive({ message: "Quantity must be positive" }),
+        reason: z.string().optional(),
+      })
+    )
+    .min(1, { message: "At least one adjustment is required" }),
+})
+
+export type AdjustmentFormValues = z.infer<typeof adjustmentFormSchema>
+export type AdjustmentParams = AdjustmentFormValues
+
 // Shopify variant mapping schema - supports multiple components
 export const shopifyComponentMappingSchema = z.object({
   erpVariantId: z.string().uuid({ message: "Please select a valid ERP product" }),

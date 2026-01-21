@@ -93,6 +93,7 @@ export const inventoryMovements = pgTable("inventory_movements", {
     }),
   quantity: numeric("quantity", { precision: 18, scale: 2 }).notNull(),
   action: text("action").notNull(),
+  reason: text("reason"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
