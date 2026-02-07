@@ -82,6 +82,7 @@ export type ProductParams = ProductFormValues
 
 // Output form schema
 export const outputFormSchema = z.object({
+  createdBy: z.string().trim().min(1, { message: "Ersteller ist erforderlich" }),
   outputs: z
     .array(
       z.object({
@@ -100,6 +101,7 @@ export type OutputParams = OutputFormValues
 
 // Purchase form schema
 export const purchaseFormSchema = z.object({
+  createdBy: z.string().trim().min(1, { message: "Ersteller ist erforderlich" }),
   purchases: z
     .array(
       z.object({
@@ -118,6 +120,7 @@ export type PurchaseParams = PurchaseFormValues
 
 // Adjustment form schema
 export const adjustmentFormSchema = z.object({
+  createdBy: z.string().trim().min(1, { message: "Ersteller ist erforderlich" }),
   adjustments: z
     .array(
       z.object({

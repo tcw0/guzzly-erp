@@ -59,6 +59,7 @@ export async function createPurchase(params: PurchaseParams) {
           variantId: variantId,
           quantity: item.quantity.toString(),
           action: inventoryActionEnum.enum.PURCHASE,
+          createdBy: params.createdBy || null,
         })
 
         // Upsert inventory add quantity

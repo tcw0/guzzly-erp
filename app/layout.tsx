@@ -2,8 +2,9 @@ import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+import { SidebarProvider } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/AppSidebar"
+import { BottomNav } from "@/components/BottomNav"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,12 +33,10 @@ export default function RootLayout({
       >
         <SidebarProvider>
           <AppSidebar />
-          {/* <main className="flex min-h-screen w-full flex-row"> */}
-          <main className="w-full">
-            <SidebarTrigger />
-            {/* <Header session={session} /> */}
+          <main className="w-full pb-14 md:pb-0">
             {children}
           </main>
+          <BottomNav />
         </SidebarProvider>
         <Toaster duration={Infinity} />
       </body>

@@ -68,6 +68,7 @@ export default function OutputForm() {
   const form = useForm<z.infer<typeof outputFormSchema>>({
     resolver: zodResolver(outputFormSchema),
     defaultValues: {
+      createdBy: "",
       outputs: [{ productId: "", quantity: 0 }],
     },
   })
@@ -138,6 +139,7 @@ export default function OutputForm() {
     if (result.success) {
       toast.success("Production output recorded successfully")
       form.reset({
+        createdBy: "",
         outputs: [{ productId: "", quantity: 0 }],
       })
       setProductVariationsMap(new Map())
@@ -153,6 +155,19 @@ export default function OutputForm() {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <FormField
+          control={form.control}
+          name="createdBy"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Ersteller Output</FormLabel>
+              <FormControl>
+                <Input placeholder="Name des Erstellers" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <FormField
           control={form.control}
           name="outputs"
