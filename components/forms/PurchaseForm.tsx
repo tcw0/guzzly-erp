@@ -67,6 +67,7 @@ export default function PurchaseForm() {
   const form = useForm<z.infer<typeof purchaseFormSchema>>({
     resolver: zodResolver(purchaseFormSchema),
     defaultValues: {
+      createdBy: "",
       purchases: [{ productId: "", quantity: 0 }],
     },
   })
@@ -137,7 +138,7 @@ export default function PurchaseForm() {
     if (result.success) {
       toast.success("Purchase recorded successfully")
       await loadProducts()
-      form.reset({ purchases: [{ productId: "", quantity: 0 }] })
+      form.reset({ createdBy: "", purchases: [{ productId: "", quantity: 0 }] })
       setProductVariationsMap(new Map())
     } else {
       toast.error("message" in result ? result.message : "An error occurred")
@@ -149,6 +150,19 @@ export default function PurchaseForm() {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <FormField
+          control={form.control}
+          name="createdBy"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Ersteller Purchase</FormLabel>
+              <FormControl>
+                <Input placeholder="Name des Erstellers" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <FormField
           control={form.control}
           name="purchases"

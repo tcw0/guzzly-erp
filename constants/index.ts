@@ -12,6 +12,7 @@ import {
   Settings,
   Bug,
   Boxes,
+  Grid3X3,
 } from "lucide-react"
 
 export const sidebarLinks = [
@@ -34,6 +35,11 @@ export const sidebarLinks = [
     title: "Inventory",
     url: "/inventory",
     icon: Columns3,
+  },
+  {
+    title: "Pole-Matrix",
+    url: "/pole-matrix",
+    icon: Grid3X3,
   },
   {
     title: "BOM Overview",

@@ -23,8 +23,15 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="flex items-center justify-center py-4">
-        <Image src="/icons/logo.svg" alt="logo" height={60} width={60} />
+      <SidebarHeader className="flex w-full items-center justify-center py-4 px-2">
+        {/* Logo: public/icons/logo.svg – skaliert auf Sidebar-Breite minus 8px links/rechts, Seitenverhältnis bleibt erhalten */}
+        <Image
+          src="/icons/logo.svg"
+          alt="logo"
+          width={322}
+          height={208}
+          className="w-full h-auto max-w-full"
+        />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

@@ -94,6 +94,7 @@ export const inventoryMovements = pgTable("inventory_movements", {
   quantity: numeric("quantity", { precision: 18, scale: 2 }).notNull(),
   action: text("action").notNull(),
   reason: text("reason"),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -306,6 +307,32 @@ export const shopifyVariantHistory = pgTable(
   })
 )
 
+// Manual orders (non-Shopify): name, order number, reason, status open/fulfilled
+export const manualOrders = pgTable("manual_orders", {
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  orderNumber: text("order_number").notNull(),
+  reason: text("reason"),
+  status: text("status").notNull().default("open"), // open | fulfilled
+  createdBy: text("created_by"),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+})
+
+// Line items for manual orders: product variant + quantity (stock deducted on fulfill)
+export const manualOrderItems = pgTable("manual_order_items", {
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
+  orderId: uuid("order_id")
+    .references(() => manualOrders.id, { onDelete: "cascade" })
+    .notNull(),
+  productVariantId: uuid("product_variant_id")
+    .references(() => productVariants.id, { onDelete: "cascade" })
+    .notNull(),
+  quantity: numeric("quantity", { precision: 18, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+})
+
 export type Product = typeof products.$inferSelect
 export type VariantBillOfMaterials = typeof variantBillOfMaterials.$inferSelect
 export type ProductVariation = typeof productVariations.$inferSelect
@@ -319,4 +346,6 @@ export type ShopifyOrderItem = typeof shopifyOrderItems.$inferSelect
 export type ShopifyVariantHistory = typeof shopifyVariantHistory.$inferSelect
 export type ShopifyWebhookLog = typeof shopifyWebhookLogs.$inferSelect
 export type ShopifyOrderAnnotation = typeof shopifyOrderAnnotations.$inferSelect
+export type ManualOrder = typeof manualOrders.$inferSelect
+export type ManualOrderItem = typeof manualOrderItems.$inferSelect
 // export type ManufacturingStep = typeof manufacturingSteps.$inferSelect

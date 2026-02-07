@@ -67,6 +67,7 @@ export default function AdjustmentForm() {
   const form = useForm<z.infer<typeof adjustmentFormSchema>>({
     resolver: zodResolver(adjustmentFormSchema),
     defaultValues: {
+      createdBy: "",
       adjustments: [{ productId: "", direction: "decrease", quantity: 0, reason: "" }],
     },
   })
@@ -137,7 +138,7 @@ export default function AdjustmentForm() {
     if (result.success) {
       toast.success("Inventory adjustment recorded successfully")
       await loadProducts()
-      form.reset({ adjustments: [{ productId: "", direction: "decrease", quantity: 0, reason: "" }] })
+      form.reset({ createdBy: "", adjustments: [{ productId: "", direction: "decrease", quantity: 0, reason: "" }] })
       setProductVariationsMap(new Map())
     } else {
       toast.error("message" in result ? result.message : "An error occurred")
@@ -149,6 +150,19 @@ export default function AdjustmentForm() {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <FormField
+          control={form.control}
+          name="createdBy"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Ersteller Adjustment</FormLabel>
+              <FormControl>
+                <Input placeholder="Name des Erstellers" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <FormField
           control={form.control}
           name="adjustments"
