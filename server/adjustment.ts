@@ -62,6 +62,7 @@ export async function createAdjustment(params: AdjustmentParams) {
           quantity: actualQuantity.toString(),
           action: inventoryActionEnum.enum.ADJUSTMENT,
           reason: item.reason || null,
+          createdBy: params.createdBy || null,
         })
 
         // Update inventory - add or subtract quantity

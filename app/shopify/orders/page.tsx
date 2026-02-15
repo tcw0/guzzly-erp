@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -31,11 +31,24 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { toast } from "sonner"
 import {
   fetchShopifyOrdersLive,
   upsertOrderAnnotation,
 } from "@/server/shopify-orders"
+import {
+  getManualOrders,
+  setManualOrderFulfilled,
+  type ManualOrderWithItems,
+} from "@/server/manual-orders"
+import { ManualOrderForm } from "@/components/forms/ManualOrderForm"
 import {
   Loader2,
   RefreshCw,
@@ -47,6 +60,7 @@ import {
   Edit2,
   Save,
   X,
+  Plus,
 } from "lucide-react"
 
 interface ShopifyOrderLineItem {
@@ -105,9 +119,31 @@ export default function ShopifyOrdersPage() {
     Record<string, { value: string; saving: boolean }>
   >({})
 
+  const [manualOrders, setManualOrders] = useState<ManualOrderWithItems[]>([])
+  const [manualOrderFilter, setManualOrderFilter] = useState<"open" | "fulfilled">("open")
+  const [manualOrdersLoading, setManualOrdersLoading] = useState(true)
+  const [manualDialogOpen, setManualDialogOpen] = useState(false)
+  const [editManualOrder, setEditManualOrder] = useState<ManualOrderWithItems | null>(null)
+  const [expandedManualOrders, setExpandedManualOrders] = useState<Set<string>>(new Set())
+
+  const loadManualOrders = useCallback(async () => {
+    setManualOrdersLoading(true)
+    const result = await getManualOrders(manualOrderFilter)
+    if (result.success && result.data) {
+      setManualOrders(result.data)
+      const openIds = new Set(result.data.map((o) => o.id))
+      setExpandedManualOrders(openIds)
+    }
+    setManualOrdersLoading(false)
+  }, [manualOrderFilter])
+
   useEffect(() => {
     loadOrders()
   }, [])
+
+  useEffect(() => {
+    loadManualOrders()
+  }, [loadManualOrders])
 
   async function loadOrders() {
     setLoading(true)
@@ -208,6 +244,35 @@ export default function ShopifyOrdersPage() {
     setExpandedOrders(next)
   }
 
+  function setManualOrderExpanded(orderId: string, open: boolean) {
+    setExpandedManualOrders((prev) => {
+      const next = new Set(prev)
+      if (open) next.add(orderId)
+      else next.delete(orderId)
+      return next
+    })
+  }
+
+  async function handleFulfillManualOrder(orderId: string) {
+    const result = await setManualOrderFulfilled(orderId)
+    if (result.success) {
+      toast.success("Auftrag als erfüllt markiert, Bestand wurde abgezogen.")
+      loadManualOrders()
+    } else {
+      toast.error(result.message ?? "Fehler beim Erfüllen")
+    }
+  }
+
+  function openCreateManualOrder() {
+    setEditManualOrder(null)
+    setManualDialogOpen(true)
+  }
+
+  function openEditManualOrder(order: ManualOrderWithItems) {
+    setEditManualOrder(order)
+    setManualDialogOpen(true)
+  }
+
   const filteredOrders = orders.filter((order) => {
     if (statusFilter !== "all" && order.status !== statusFilter) return false
 
@@ -238,75 +303,186 @@ export default function ShopifyOrdersPage() {
   }
 
   return (
-    <section className="flex h-[calc(100vh-4rem)] w-full flex-col gap-4 p-8">
+    <section className="flex h-[calc(100vh-4rem)] w-full flex-col gap-4 p-4 md:p-8">
       <div className="flex h-full w-full flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Shopify Orders</h1>
-            <p className="text-muted-foreground mt-2">
-              Live orders from Shopify with picklists for open orders
-            </p>
-          </div>
-          <Button onClick={loadOrders} variant="outline" disabled={loading}>
-            <RefreshCw
-              className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Orders
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.total}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Open
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">
-                {stats.open}
+        {/* Manuelle Aufträge */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <CardTitle>Manuelle Aufträge</CardTitle>
+                <CardDescription>
+                  Manuell angelegte Aufträge – bei Erfüllung wird der Bestand abgezogen.
+                </CardDescription>
               </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Fulfilled
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {stats.fulfilled}
+              <div className="flex items-center gap-2">
+                <Select
+                  value={manualOrderFilter}
+                  onValueChange={(v) => setManualOrderFilter(v as "open" | "fulfilled")}
+                >
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="fulfilled">Fulfilled</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button onClick={openCreateManualOrder}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Manueller Auftrag
+                </Button>
               </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Cancelled
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {stats.cancelled}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {manualOrdersLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin" />
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            ) : manualOrders.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground">
+                <Package className="mx-auto mb-4 h-12 w-12 opacity-50" />
+                <p>Keine manuellen Aufträge ({manualOrderFilter === "open" ? "Open" : "Fulfilled"})</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {manualOrders.map((order) => (
+                  <Collapsible
+                    key={order.id}
+                    open={expandedManualOrders.has(order.id)}
+                    onOpenChange={(open) => setManualOrderExpanded(order.id, open)}
+                  >
+                    <div className="rounded-lg border overflow-hidden">
+                      <div className="bg-muted/50 p-3 md:p-4">
+                        <div className="flex flex-col gap-2">
+                          {/* Title + Badge */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <CollapsibleTrigger asChild>
+                              <Button variant="ghost" size="sm" className="shrink-0 h-auto py-1 px-2 text-left">
+                                <Package className="mr-2 h-4 w-4 shrink-0" />
+                                <span className="truncate">{order.name} – #{order.orderNumber}</span>
+                              </Button>
+                            </CollapsibleTrigger>
+                            <Badge
+                              variant={order.status === "fulfilled" ? "default" : "outline"}
+                              className="shrink-0"
+                            >
+                              {order.status === "fulfilled" ? (
+                                <CheckCircle2 className="mr-1 h-3 w-3" />
+                              ) : (
+                                <Clock className="mr-1 h-3 w-3" />
+                              )}
+                              {order.status === "open" ? "Open" : "Fulfilled"}
+                            </Badge>
+                          </div>
+                          {/* Meta: reason, ersteller, datum */}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground pl-1">
+                            {order.reason && <span>{order.reason}</span>}
+                            {order.createdBy && <span>Ersteller: {order.createdBy}</span>}
+                            <span>{new Date(order.createdAt).toLocaleString("de-DE")}</span>
+                          </div>
+                          {/* Actions */}
+                          {order.status === "open" && (
+                            <div className="flex items-center gap-2 pt-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openEditManualOrder(order)}
+                              >
+                                <Edit2 className="mr-1 h-3 w-3" />
+                                Bearbeiten
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleFulfillManualOrder(order.id)}
+                              >
+                                <CheckCircle2 className="mr-1 h-3 w-3" />
+                                Erfüllen
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <CollapsibleContent>
+                        <div className="p-3 md:p-4">
+                          {/* Mobile: card layout */}
+                          <div className="space-y-2 md:hidden">
+                            {order.lineItems.map((item) => (
+                              <div key={item.id} className="flex items-start gap-3 rounded-md border p-3">
+                                <span className="font-semibold shrink-0">{item.quantity}x</span>
+                                <div className="min-w-0">
+                                  <div className="font-medium">{item.productName}</div>
+                                  {item.variantLabel && item.variantLabel !== "–" && (
+                                    <div className="text-sm text-muted-foreground">{item.variantLabel}</div>
+                                  )}
+                                  <div className="text-xs font-mono text-muted-foreground">{item.sku}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {/* Desktop: table layout */}
+                          <div className="hidden md:block">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="text-right">Menge</TableHead>
+                                  <TableHead>Produkt</TableHead>
+                                  <TableHead>Variante</TableHead>
+                                  <TableHead>SKU</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {order.lineItems.map((item) => (
+                                  <TableRow key={item.id}>
+                                    <TableCell className="text-right font-medium">
+                                      {item.quantity}x
+                                    </TableCell>
+                                    <TableCell className="font-medium">{item.productName}</TableCell>
+                                    <TableCell className="text-muted-foreground text-sm">
+                                      {item.variantLabel || "–"}
+                                    </TableCell>
+                                    <TableCell className="font-mono text-sm">{item.sku}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      </CollapsibleContent>
+                    </div>
+                  </Collapsible>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex gap-4">
+          <CardHeader className="pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <CardTitle>Shopify Orders</CardTitle>
+                <CardDescription>
+                  Live orders from Shopify – {filteredOrders.length} order(s) found
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="hidden md:flex items-center gap-3 text-sm">
+                  <span className="font-medium tabular-nums">{stats.total} <span className="text-muted-foreground font-normal">Total</span></span>
+                  <span className="font-medium tabular-nums text-yellow-600">{stats.open} <span className="text-muted-foreground font-normal">Open</span></span>
+                  <span className="font-medium tabular-nums text-green-600">{stats.fulfilled} <span className="text-muted-foreground font-normal">Fulfilled</span></span>
+                  <span className="font-medium tabular-nums text-red-600">{stats.cancelled} <span className="text-muted-foreground font-normal">Cancelled</span></span>
+                </div>
+                <Button onClick={loadOrders} variant="outline" size="sm" disabled={loading}>
+                  <RefreshCw
+                    className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
+                  />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+            <div className="flex gap-4 pt-3">
               <div className="flex-1">
                 <div className="relative">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -331,15 +507,6 @@ export default function ShopifyOrdersPage() {
                 </SelectContent>
               </Select>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Orders</CardTitle>
-            <CardDescription>
-              {filteredOrders.length} order(s) found
-            </CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -360,17 +527,18 @@ export default function ShopifyOrdersPage() {
                     onOpenChange={(open) => setOrderExpanded(order.id, open)}
                   >
                     <div className="border rounded-lg overflow-hidden">
-                      <div className="bg-muted/50 p-4">
-                        <div className="flex items-center justify-between gap-4 flex-wrap">
-                          <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <div className="bg-muted/50 p-3 md:p-4">
+                        <div className="flex flex-col gap-2">
+                          {/* Title + Badge */}
+                          <div className="flex items-center gap-2 flex-wrap">
                             <CollapsibleTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="shrink-0"
+                                className="shrink-0 h-auto py-1 px-2 text-left"
                               >
-                                <Package className="h-4 w-4 mr-2" />
-                                Order #{order.orderNumber}
+                                <Package className="h-4 w-4 mr-2 shrink-0" />
+                                <span className="truncate">Order #{order.orderNumber}</span>
                               </Button>
                             </CollapsibleTrigger>
                             <Badge
@@ -389,7 +557,8 @@ export default function ShopifyOrdersPage() {
                               {formatStatusLabel(order.status)}
                             </Badge>
                           </div>
-                          <div className="flex items-center gap-3 text-sm flex-wrap justify-end">
+                          {/* Meta: customer, price, date */}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm pl-1">
                             {editingCustomerName[order.id] ? (
                               <div className="flex items-center gap-2">
                                 <Input
@@ -439,8 +608,8 @@ export default function ShopifyOrdersPage() {
                                 </Button>
                               </div>
                             ) : (
-                              <>
-                                <div
+                              <div className="flex items-center gap-1">
+                                <span
                                   className={
                                     order.displayCustomerName
                                       ? "font-medium"
@@ -450,7 +619,7 @@ export default function ShopifyOrdersPage() {
                                   {order.displayCustomerName ||
                                     order.customerEmail ||
                                     "No name"}
-                                </div>
+                                </span>
                                 <Button
                                   size="sm"
                                   variant="ghost"
@@ -460,75 +629,104 @@ export default function ShopifyOrdersPage() {
                                       order.displayCustomerName
                                     )
                                   }
-                                  className="h-8 px-2"
+                                  className="h-6 w-6 p-0"
                                   title="Edit customer name"
                                 >
                                   <Edit2 className="h-3 w-3" />
                                 </Button>
-                              </>
+                              </div>
                             )}
-                            <div className="text-muted-foreground">
+                            <span className="text-muted-foreground">
                               {order.totalPrice} {order.currency}
-                            </div>
-                            <div className="text-muted-foreground">
+                            </span>
+                            <span className="text-muted-foreground">
                               {new Date(order.createdAt).toLocaleDateString()}
-                            </div>
+                            </span>
                           </div>
                         </div>
                       </div>
 
                       <CollapsibleContent>
-                        <div className="p-4">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="text-right">
-                                  Qty
-                                </TableHead>
-                                <TableHead>Item</TableHead>
-                                <TableHead>Variant</TableHead>
-                                <TableHead>SKU</TableHead>
-                                <TableHead>Properties</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {order.lineItems.map((item) => (
-                                <TableRow key={item.id}>
-                                  <TableCell className="text-right font-medium">
-                                    {item.quantity}x
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="font-medium">
-                                      {item.title}
+                        <div className="p-3 md:p-4">
+                          {/* Mobile: card layout */}
+                          <div className="space-y-2 md:hidden">
+                            {order.lineItems.map((item) => (
+                              <div key={item.id} className="flex items-start gap-3 rounded-md border p-3">
+                                <span className="font-semibold shrink-0">{item.quantity}x</span>
+                                <div className="min-w-0">
+                                  <div className="font-medium">{item.title}</div>
+                                  {item.variantTitle && (
+                                    <div className="text-sm text-muted-foreground">{item.variantTitle}</div>
+                                  )}
+                                  {item.sku && (
+                                    <div className="text-xs font-mono text-muted-foreground">{item.sku}</div>
+                                  )}
+                                  {item.properties.length > 0 && (
+                                    <div className="mt-1 flex flex-col gap-0.5 text-xs text-muted-foreground">
+                                      {item.properties.map((prop, index) => (
+                                        <span key={`${item.id}-mprop-${index}`}>
+                                          {prop.name}: {prop.value}
+                                        </span>
+                                      ))}
                                     </div>
-                                  </TableCell>
-                                  <TableCell className="text-sm text-muted-foreground">
-                                    {item.variantTitle || "-"}
-                                  </TableCell>
-                                  <TableCell className="font-mono text-sm">
-                                    {item.sku || "-"}
-                                  </TableCell>
-                                  <TableCell>
-                                    {item.properties.length > 0 ? (
-                                      <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-                                        {item.properties.map((prop, index) => (
-                                          <span
-                                            key={`${item.id}-prop-${index}`}
-                                          >
-                                            {prop.name}: {prop.value}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <span className="text-muted-foreground">
-                                        -
-                                      </span>
-                                    )}
-                                  </TableCell>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {/* Desktop: table layout */}
+                          <div className="hidden md:block">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="text-right">
+                                    Qty
+                                  </TableHead>
+                                  <TableHead>Item</TableHead>
+                                  <TableHead>Variant</TableHead>
+                                  <TableHead>SKU</TableHead>
+                                  <TableHead>Properties</TableHead>
                                 </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
+                              </TableHeader>
+                              <TableBody>
+                                {order.lineItems.map((item) => (
+                                  <TableRow key={item.id}>
+                                    <TableCell className="text-right font-medium">
+                                      {item.quantity}x
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="font-medium">
+                                        {item.title}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="text-sm text-muted-foreground">
+                                      {item.variantTitle || "-"}
+                                    </TableCell>
+                                    <TableCell className="font-mono text-sm">
+                                      {item.sku || "-"}
+                                    </TableCell>
+                                    <TableCell>
+                                      {item.properties.length > 0 ? (
+                                        <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+                                          {item.properties.map((prop, index) => (
+                                            <span
+                                              key={`${item.id}-prop-${index}`}
+                                            >
+                                              {prop.name}: {prop.value}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <span className="text-muted-foreground">
+                                          -
+                                        </span>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
                         </div>
                       </CollapsibleContent>
                     </div>
@@ -539,6 +737,36 @@ export default function ShopifyOrdersPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog
+        open={manualDialogOpen}
+        onOpenChange={(open) => {
+          setManualDialogOpen(open)
+          if (!open) setEditManualOrder(null)
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>
+              {editManualOrder ? "Manuellen Auftrag bearbeiten" : "Manueller Auftrag"}
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="flex-1 min-h-0 max-h-[70vh] overflow-auto pr-4">
+            <ManualOrderForm
+              editOrder={editManualOrder}
+              onSuccess={() => {
+                setManualDialogOpen(false)
+                setEditManualOrder(null)
+                loadManualOrders()
+              }}
+              onCancel={() => {
+                setManualDialogOpen(false)
+                setEditManualOrder(null)
+              }}
+            />
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

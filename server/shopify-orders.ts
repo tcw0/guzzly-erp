@@ -806,7 +806,28 @@ export async function processShopifyOrder(
     }
 
     // 5. Deduct inventory for all component mappings (sales fulfillment)
+    //    Wrapped in a transaction so partial deductions can't occur on error.
     if (mappingResults.mapped.length > 0) {
+      // Atomic idempotency lock: claim this order for processing.
+      // If another webhook already claimed it (processedAt != null), bail out.
+      const [claimed] = await db
+        .update(shopifyOrders)
+        .set({ processedAt: new Date() })
+        .where(
+          and(
+            eq(shopifyOrders.id, order.id),
+            sql`${shopifyOrders.processedAt} IS NULL`
+          )
+        )
+        .returning({ id: shopifyOrders.id })
+
+      if (!claimed) {
+        console.log(
+          `[Order ${shopifyOrderId}] Already claimed by another webhook, skipping inventory deduction`
+        )
+        return { success: true, skipped: true, orderId: order.id }
+      }
+
       console.log(
         `[Order ${shopifyOrderId}] Deducting inventory for ${mappingResults.mapped.length} component(s)`
       )
@@ -836,44 +857,49 @@ export async function processShopifyOrder(
         `[Order ${shopifyOrderId}] Aggregated into ${componentAggregation.size} unique component(s)`
       )
 
-      // Deduct inventory for each unique component
-      for (const [variantId, component] of componentAggregation.entries()) {
-        // Create inventory movement record (negative quantity for sale)
-        await db.insert(inventoryMovements).values({
-          productId: component.productId,
-          variantId: variantId,
-          quantity: (-component.totalQty).toString(),
-          action: inventoryActionEnum.enum.SALE,
-        })
-
-        // Update inventory quantity
-        const [updatedInventory] = await db
-          .update(inventory)
-          .set({
-            quantityOnHand: sql`${inventory.quantityOnHand} - ${component.totalQty}`,
+      // Transaction: all inventory deductions + order marking happen atomically
+      await db.transaction(async (tx) => {
+        for (const [variantId, component] of componentAggregation.entries()) {
+          // Create inventory movement record (negative quantity for sale)
+          await tx.insert(inventoryMovements).values({
+            productId: component.productId,
+            variantId: variantId,
+            quantity: (-component.totalQty).toString(),
+            action: inventoryActionEnum.enum.SALE,
           })
-          .where(eq(inventory.variantId, variantId))
-          .returning({ newQuantity: inventory.quantityOnHand })
 
-        console.log(
-          `[Order ${shopifyOrderId}] Deducted ${component.totalQty}x ${component.name} (${component.sku}): ${updatedInventory.newQuantity} remaining`
-        )
+          // Upsert inventory quantity (handles missing inventory rows)
+          const [updatedInventory] = await tx
+            .insert(inventory)
+            .values({
+              productId: component.productId,
+              variantId: variantId,
+              quantityOnHand: (-component.totalQty).toString(),
+            })
+            .onConflictDoUpdate({
+              target: inventory.variantId,
+              set: {
+                quantityOnHand: sql`${inventory.quantityOnHand} - ${component.totalQty}`,
+              },
+            })
+            .returning({ newQuantity: inventory.quantityOnHand })
 
-        // Check if inventory went negative (shouldn't happen due to earlier check)
-        if (parseFloat(updatedInventory.newQuantity.toString()) < 0) {
-          console.warn(
-            `[Order ${shopifyOrderId}] ⚠️  Negative inventory for ${component.name} (${component.sku}): ${updatedInventory.newQuantity}`
+          console.log(
+            `[Order ${shopifyOrderId}] Deducted ${component.totalQty}x ${component.name} (${component.sku}): ${updatedInventory?.newQuantity} remaining`
           )
-        }
-      }
 
-      // Mark order as processed
-      await db
-        .update(shopifyOrders)
-        .set({
-          processedAt: new Date(),
-        })
-        .where(eq(shopifyOrders.id, order.id))
+          if (
+            updatedInventory &&
+            parseFloat(updatedInventory.newQuantity.toString()) < 0
+          ) {
+            console.warn(
+              `[Order ${shopifyOrderId}] ⚠️  Negative inventory for ${component.name} (${component.sku}): ${updatedInventory.newQuantity}`
+            )
+          }
+        }
+
+        // processedAt already set atomically before the transaction (idempotency lock)
+      })
 
       console.log(`[Order ${shopifyOrderId}] ✅ Processed successfully`, {
         mappedItems: mappingResults.mapped.length,

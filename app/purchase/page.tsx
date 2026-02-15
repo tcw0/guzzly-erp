@@ -34,11 +34,11 @@ async function Purchase() {
               Add Purchase
             </Button>
           </DialogTrigger>
-          <DialogContent className="p-0">
-            <DialogHeader className="px-6 pt-6">
+          <DialogContent className="p-0 max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader className="px-6 pt-6 shrink-0">
               <DialogTitle>Add Purchase</DialogTitle>
             </DialogHeader>
-            <ScrollArea className="px-6 pb-6 max-h-[80vh]">
+            <ScrollArea className="px-6 pb-6 max-h-[75vh] overflow-auto">
               <PurchaseForm />
             </ScrollArea>
           </DialogContent>

@@ -65,6 +65,7 @@ export async function createOutput(params: OutputParams) {
           variantId: variantId,
           quantity: output.quantity.toString(),
           action: inventoryActionEnum.enum.OUTPUT,
+          createdBy: params.createdBy || null,
         })
 
         // Update inventory for produced item
