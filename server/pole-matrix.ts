@@ -14,32 +14,12 @@ const COLORS = [
 
 /** Map DB color aliases to canonical column names */
 const COLOR_ALIASES: Record<string, string> = {
+  weiss: "Weiß",
   gelb: "Neongelb",
   grün: "Neongrün",
 }
 
 const COLORS_LOWER = COLORS.map((c) => c.toLowerCase())
-
-type MatrixRowDef = {
-  label: string
-  /** Match any of these product names (case-insensitive). Multiple = aggregation (e.g. Shiny+Matt) */
-  productNames: string[]
-  category: "magnet" | "kein_magnet" | "other"
-}
-
-const ROW_DEFINITIONS: MatrixRowDef[] = [
-  { label: "Nupsi | Kein Magnet", productNames: ["Nupsi | Kein Magnet"], category: "kein_magnet" },
-  { label: "Nupsi | Magnet", productNames: ["Nupsi | Magnet"], category: "magnet" },
-  { label: "Griff | Kein Magnet", productNames: ["Griff | Kein Magnet"], category: "kein_magnet" },
-  { label: "Griff | Magnet", productNames: ["Griff | Magnet"], category: "magnet" },
-  { label: "Stock | Assembled", productNames: ["Stock | Assembled"], category: "other" },
-  { label: "Halterung | Assembled", productNames: ["Halterung | Assembled"], category: "other" },
-  { label: "Pistenteller | Kein Magnet", productNames: ["Pistenteller | Kein Magnet"], category: "kein_magnet" },
-  { label: "Pistenteller | Magnet", productNames: ["Pistenteller | Magnet"], category: "magnet" },
-  { label: "Tiefschneeteller | Kein Magnet", productNames: ["Tiefschneeteller Matt | Kein Magnet", "Tiefschneeteller Shiny | Kein Magnet"], category: "kein_magnet" },
-  { label: "Tiefschneeteller | Magnet", productNames: ["Tiefschneeteller Matt | Magnet", "Tiefschneeteller Shiny | Magnet"], category: "magnet" },
-  { label: "Mutter", productNames: ["Mutter"], category: "other" },
-]
 
 export type MatrixCell = {
   quantity: number
@@ -50,6 +30,7 @@ export type MatrixCell = {
 export type MatrixRow = {
   label: string
   category: "magnet" | "kein_magnet" | "other"
+  type: "RAW" | "INTERMEDIATE" | "FINAL"
   cells: Record<string, MatrixCell | null>
 }
 
@@ -63,19 +44,20 @@ export type PoleMatrixResult = {
 function getColor(item: InventoryItem): string | null {
   for (const sel of item.variantSelections) {
     const val = sel.optionValue.toLowerCase()
-    // Direct match against known colors
     const idx = COLORS_LOWER.indexOf(val)
     if (idx !== -1) return COLORS[idx]
-    // Alias match (e.g. "Gelb" → "Neongelb", "Grün" → "Neongrün")
     const alias = COLOR_ALIASES[val]
     if (alias) return alias
   }
   return null
 }
 
-function matchesRow(item: InventoryItem, rowDef: MatrixRowDef): boolean {
-  const name = item.productName.toLowerCase()
-  return rowDef.productNames.some((pn) => pn.toLowerCase() === name)
+/** Derive category from product name */
+function getCategory(productName: string): MatrixRow["category"] {
+  const lower = productName.toLowerCase()
+  if (lower.includes("kein magnet")) return "kein_magnet"
+  if (lower.includes("magnet")) return "magnet"
+  return "other"
 }
 
 export async function getPoleMatrixData(): Promise<PoleMatrixResult> {
@@ -87,15 +69,24 @@ export async function getPoleMatrixData(): Promise<PoleMatrixResult> {
 
     const allItems = result.data
 
-    const rows: MatrixRow[] = ROW_DEFINITIONS.map((rowDef) => {
-      const matchingItems = allItems.filter((item) => matchesRow(item, rowDef))
+    // Group items by exact product name (as stored in DB)
+    const byProduct = new Map<string, InventoryItem[]>()
+    for (const item of allItems) {
+      if (!byProduct.has(item.productName)) {
+        byProduct.set(item.productName, [])
+      }
+      byProduct.get(item.productName)!.push(item)
+    }
 
+    // Sort product names alphabetically for consistent ordering
+    const sortedProductNames = [...byProduct.keys()].sort()
+
+    const rows: MatrixRow[] = sortedProductNames.map((productName) => {
+      const matchingItems = byProduct.get(productName)!
       const cells: Record<string, MatrixCell | null> = {}
 
       for (const color of COLORS) {
-        const colorItems = matchingItems.filter(
-          (item) => getColor(item) === color
-        )
+        const colorItems = matchingItems.filter((item) => getColor(item) === color)
 
         if (colorItems.length === 0) {
           cells[color] = null
@@ -118,8 +109,9 @@ export async function getPoleMatrixData(): Promise<PoleMatrixResult> {
       }
 
       return {
-        label: rowDef.label,
-        category: rowDef.category,
+        label: productName,
+        category: getCategory(productName),
+        type: (matchingItems[0]?.type ?? "RAW") as "RAW" | "INTERMEDIATE" | "FINAL",
         cells,
       }
     })
@@ -128,8 +120,7 @@ export async function getPoleMatrixData(): Promise<PoleMatrixResult> {
   } catch (error) {
     return {
       success: false,
-      message:
-        error instanceof Error ? error.message : "Unbekannter Fehler",
+      message: error instanceof Error ? error.message : "Unbekannter Fehler",
     }
   }
 }
