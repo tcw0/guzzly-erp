@@ -868,11 +868,13 @@ export async function processShopifyOrder(
             action: inventoryActionEnum.enum.SALE,
           })
 
-          // Upsert inventory quantity (handles missing inventory rows)
+          
+          // On INSERT: set to the deducted amount directly (0 - component.totalQty)
+          // On UPDATE: subtract the component quantity from current value
+          // Both paths apply the same deduction semantics
           const [updatedInventory] = await tx
             .insert(inventory)
             .values({
-              productId: component.productId,
               variantId: variantId,
               quantityOnHand: (-component.totalQty).toString(),
             })
